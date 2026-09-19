@@ -10,6 +10,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.MapExtendingRecipe;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.display.RecipeDisplay;
@@ -73,6 +75,9 @@ final class RecipeCardResolver {
     }
 
     private Optional<RecipeCardData> fromRecipe(RecipeHolder<?> holder, ContextMap context) {
+        if (holder.value() instanceof MapExtendingRecipe) {
+            return Optional.of(mapExtendingCard(holder.id().identifier().toString()));
+        }
         for (RecipeDisplay display : holder.value().display()) {
             Optional<RecipeCardData> resolved = fromDisplay(
                     holder.id().identifier().toString(),
@@ -84,6 +89,23 @@ final class RecipeCardResolver {
             }
         }
         return Optional.empty();
+    }
+
+    private RecipeCardData mapExtendingCard(String recipeId) {
+        List<ItemStack> ingredients = new ArrayList<>(9);
+        for (int slot = 0; slot < 9; slot++) {
+            ingredients.add(new ItemStack(slot == 4 ? Items.FILLED_MAP : Items.PAPER));
+        }
+        ItemStack result = new ItemStack(Items.FILLED_MAP);
+        return new RecipeCardData(
+                recipeId,
+                result.getHoverName(),
+                3,
+                3,
+                ingredients,
+                result,
+                false
+        );
     }
 
     private Optional<RecipeCardData> fromDisplay(

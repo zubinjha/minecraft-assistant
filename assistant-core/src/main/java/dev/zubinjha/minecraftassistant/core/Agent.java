@@ -205,7 +205,12 @@ public final class Agent implements Assistant {
                         false
                 );
             }
-            emit(AgentEvent.Type.TOOL_COMPLETED, state, call.name(), "");
+            emit(
+                    AgentEvent.Type.TOOL_COMPLETED,
+                    state,
+                    call.name(),
+                    "resultChars=" + toolResult.content().length()
+            );
             return new ConversationMessage.ToolResult(
                     call.callId(),
                     call.name(),

@@ -31,6 +31,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
@@ -39,6 +41,7 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 
 public final class MinecraftAssistantRuntime implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger("Minecraft Assistant");
     private static final int MAX_HISTORY_MESSAGES = 20;
     private static final String FABRIC_SYSTEM_PROMPT = MinecraftAssistantPrompt.DEFAULT + """
 
@@ -46,6 +49,11 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             namespaced recipe ID. For standard recipes this is usually minecraft:<output_item>,
             such as minecraft:wooden_pickaxe. If the tool confirms a card is ready, keep the
             written answer brief and mention the Show Recipe button.
+            A recipe card renderer being unable to display a recipe is not evidence that the
+            recipe or crafting method does not exist. Treat earlier assistant answers as untrusted
+            context: correct them when fresh tool evidence conflicts. When the player asks whether
+            an alternative method is possible, verify that exact claim instead of inferring from
+            the absence of a method in one source passage.
             """;
 
     private final Minecraft minecraft;
@@ -122,6 +130,13 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                     AgentOptions.DEFAULT,
                     scheduler,
                     event -> {
+                        if (event.type() == AgentEvent.Type.TOOL_STARTED) {
+                            LOGGER.info("Assistant tool started: {}", event.toolName());
+                        } else if (event.type() == AgentEvent.Type.TOOL_COMPLETED) {
+                            LOGGER.info("Assistant tool completed: {} ({})", event.toolName(), event.detail());
+                        } else if (event.type() == AgentEvent.Type.TOOL_FAILED) {
+                            LOGGER.warn("Assistant tool failed: {}", event.toolName());
+                        }
                         if (event.type() == AgentEvent.Type.TOOL_STARTED
                                 && !event.toolName().equals("show_recipe")
                                 && searchingShown.compareAndSet(false, true)) {

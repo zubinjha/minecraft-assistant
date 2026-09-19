@@ -64,8 +64,9 @@ final class RecipeCardRequestTool implements Tool {
                                     + ". Briefly tell the player to use the Show Recipe button."
                     ));
                 }, () -> result.complete(ToolExecutionResult.text(
-                        "No crafting recipe was found for " + parsed
-                                + ". Do not claim that a recipe card is available."
+                        "The native card renderer could not display " + parsed
+                                + ". This does not mean the recipe or crafting method is unavailable. "
+                                + "Do not claim that a recipe card is available."
                 )));
             } catch (RuntimeException failure) {
                 result.completeExceptionally(failure);
