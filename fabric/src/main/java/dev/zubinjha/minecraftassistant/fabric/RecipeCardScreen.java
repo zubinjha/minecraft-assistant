@@ -280,7 +280,7 @@ public final class RecipeCardScreen extends Screen {
             case SMITHING -> panelX + 44;
             case CAMPFIRE -> panelX + 8;
         };
-        graphics.text(font, name, x, y, color);
+        graphics.text(font, name, x, y, color, false);
         if (recipe instanceof RecipeCardData.Crafting crafting && crafting.shapeless()) {
             String label = "Shapeless";
             graphics.text(
@@ -288,7 +288,8 @@ public final class RecipeCardScreen extends Screen {
                     label,
                     panelX + NativeRecipeLayout.PANEL_WIDTH - 8 - font.width(label),
                     panelY + 6,
-                    0xFF606060
+                    0xFF606060,
+                    false
             );
         }
     }
