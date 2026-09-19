@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft-assistant-test",
+  "version": "1.0.0",
+  "name": "Minecraft Assistant Client Tests",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "dev.zubinjha.minecraftassistant.fabric.MinecraftAssistantClientGameTest"
+    ]
+  }
+}

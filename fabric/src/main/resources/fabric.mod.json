@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft-assistant",
+  "version": "${version}",
+  "name": "Minecraft Assistant",
+  "description": "A concise, Wiki-grounded AI assistant available from Minecraft chat.",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.zubinjha.minecraftassistant.fabric.MinecraftAssistantClient"
+    ]
+  },
+  "contact": {
+    "homepage": "https://github.com/zubinjha/minecraft-assistant",
+    "sources": "https://github.com/zubinjha/minecraft-assistant",
+    "issues": "https://github.com/zubinjha/minecraft-assistant/issues"
+  },
+  "license": "All-Rights-Reserved",
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

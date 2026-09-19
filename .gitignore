@@ -18,9 +18,13 @@ AGENTS.local.md
 tmp/
 temp/
 
+# Local project notes
+notes/
+
 # Common dependency and build output
 node_modules/
 dist/
+fabric/run/
 build/
 .gradle/
 out/

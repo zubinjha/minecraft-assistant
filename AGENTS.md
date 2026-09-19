@@ -11,7 +11,9 @@ This repository contains the Minecraft Assistant project.
 - Run environment diagnostics with `./gradlew :cli:run --args=doctor`.
 - Run the synthetic live tool test with `./gradlew :cli:run --args=smoke`.
 - Run the live Wiki-grounding test with `./gradlew :cli:run --args=wiki-smoke`.
-- Java 21 or newer is required to run the build. Production bytecode targets Java 17.
+- Build the Fabric 26.2 JAR with `./gradlew :fabric:build`.
+- Run the isolated creative-world client test with `./gradlew :fabric:runClientGameTest`.
+- Java 21 or newer is required for shared modules; Fabric 26.2 development requires Java 25. Shared production bytecode targets Java 17.
 
 ## Working guidelines
 
