@@ -18,7 +18,7 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
             singleplayer.getConnection().waitForChunksRender();
 
             context.runOnClient(client -> client.getConnection().sendCommand(
-                    "mcai recipe minecraft:wooden_pickaxe"
+                    "mcai recipe \"minecraft:wooden_pickaxe\" crafting"
             ));
             context.waitForScreen(RecipeCardScreen.class);
             context.takeScreenshot("minecraft-assistant-recipe-card");
@@ -62,7 +62,8 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
                     throw new AssertionError("Live assistant answer did not prepare a recipe card");
                 }
                 context.takeScreenshot("minecraft-assistant-live-answer");
-                context.runOnClient(client -> MinecraftAssistantClient.runtimeForTest().openRecipe(recipeId));
+                context.runOnClient(client -> MinecraftAssistantClient.runtimeForTest()
+                        .openRecipe(recipeId, RecipeMethod.CRAFTING.toolValue()));
                 context.waitForScreen(RecipeCardScreen.class);
                 context.takeScreenshot("minecraft-assistant-live-recipe-card");
             }

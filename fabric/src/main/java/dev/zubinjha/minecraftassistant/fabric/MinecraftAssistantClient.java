@@ -2,6 +2,8 @@ package dev.zubinjha.minecraftassistant.fabric;
 
 import static com.mojang.brigadier.arguments.StringArgumentType.getString;
 import static com.mojang.brigadier.arguments.StringArgumentType.greedyString;
+import static com.mojang.brigadier.arguments.StringArgumentType.string;
+import static com.mojang.brigadier.arguments.StringArgumentType.word;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
@@ -78,10 +80,14 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
         dispatcher.register(literal("mcai")
                 .then(command("ask"))
                 .then(literal("recipe")
-                        .then(argument("recipe_id", greedyString()).executes(context -> {
-                            runtime.openRecipe(getString(context, "recipe_id"));
-                            return 1;
-                        }))));
+                        .then(argument("recipe_id", string())
+                                .then(argument("method", word()).executes(context -> {
+                                    runtime.openRecipe(
+                                            getString(context, "recipe_id"),
+                                            getString(context, "method")
+                                    );
+                                    return 1;
+                                })))));
     }
 
     private static int usage(FabricClientCommandSource source) {

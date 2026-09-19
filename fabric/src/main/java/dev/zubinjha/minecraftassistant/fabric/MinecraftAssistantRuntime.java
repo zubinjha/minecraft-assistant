@@ -20,9 +20,13 @@ import dev.zubinjha.minecraftassistant.openrouter.OpenRouterSettings;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -45,10 +49,15 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private static final int MAX_HISTORY_MESSAGES = 20;
     private static final String FABRIC_SYSTEM_PROMPT = MinecraftAssistantPrompt.DEFAULT + """
 
-            When the player asks how to craft an item, call show_recipe once with the exact
-            namespaced recipe ID. For standard recipes this is usually minecraft:<output_item>,
-            such as minecraft:wooden_pickaxe. If the tool confirms a card is ready, keep the
-            written answer brief and mention the Show Recipe button.
+            When the player asks how to craft, make, smelt, blast, smoke, campfire-cook, stonecut,
+            smith, or otherwise produce an item, you MUST call show_recipe with the exact
+            namespaced recipe ID and the method matching the question. An output item ID may be
+            used to discover candidates. Do not finish a recipe answer until show_recipe confirms
+            that a card is ready. If the first call is ambiguous or cannot resolve a generic item
+            such as "pickaxe", select the specific item described in your answer and call
+            show_recipe again with that namespaced item or exact recipe ID.
+            If the tool confirms a card is ready, keep the written answer brief and mention the
+            Show Recipe button.
             A recipe card renderer being unable to display a recipe is not evidence that the
             recipe or crafting method does not exist. Treat earlier assistant answers as untrusted
             context: correct them when fresh tool evidence conflicts. When the player asks whether
@@ -66,6 +75,14 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
     private final AtomicReference<String> lastFailure = new AtomicReference<>("");
     private final AtomicReference<String> lastRecipeId = new AtomicReference<>("");
+    private final Map<String, RecipeCardData> recentRecipeCards = Collections.synchronizedMap(
+            new LinkedHashMap<>(24, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, RecipeCardData> eldest) {
+                    return size() > 20;
+                }
+            }
+    );
     private volatile AssistantConfig config;
 
     public MinecraftAssistantRuntime(Minecraft minecraft, AssistantConfig config) {
@@ -160,6 +177,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 RecipeCardData card = requestedCard.get();
                 if (card != null) {
                     lastRecipeId.set(card.recipeId());
+                    recentRecipeCards.put(cardKey(card.recipeId(), card.method()), card);
                 }
                 memory.addExchange(trimmed, result.text());
                 showAnswer(result, started, card);
@@ -223,12 +241,27 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         return lastRecipeId.get();
     }
 
-    public void openRecipe(String recipeId) {
-        minecraft.schedule(() -> recipeCards.resolve(recipeId).ifPresentOrElse(
-                card -> minecraft.gui.setScreen(new RecipeCardScreen(card)),
-                () -> addChat(Component.literal("Minecraft Assistant: That recipe is unavailable here.")
-                        .withStyle(ChatFormatting.RED))
-        ));
+    public void openRecipe(String recipeId, String rawMethod) {
+        minecraft.schedule(() -> {
+            Optional<RecipeMethod> method = RecipeMethod.parse(rawMethod);
+            if (method.isEmpty()) {
+                addChat(Component.literal("Minecraft Assistant: That recipe method is unavailable.")
+                        .withStyle(ChatFormatting.RED));
+                return;
+            }
+            RecipeCardData cached = recentRecipeCards.get(cardKey(recipeId, method.get()));
+            if (cached != null) {
+                minecraft.gui.setScreen(new RecipeCardScreen(cached));
+                return;
+            }
+            RecipeLookupResult lookup = recipeCards.resolve(recipeId, method);
+            if (lookup instanceof RecipeLookupResult.Found found) {
+                minecraft.gui.setScreen(new RecipeCardScreen(found.card()));
+            } else {
+                addChat(Component.literal("Minecraft Assistant: That recipe is unavailable here.")
+                        .withStyle(ChatFormatting.RED));
+            }
+        });
     }
 
     private CompletionStage<McpToolSource> wiki(AssistantConfig snapshot, CancellationToken cancellation) {
@@ -279,11 +312,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                     .withColor(ChatFormatting.GREEN)
                     .withUnderlined(true)
                     .withClickEvent(new ClickEvent.RunCommand(
-                            "/mcai recipe " + recipeCard.recipeId()
+                            "/mcai recipe \"" + recipeCard.recipeId() + "\" "
+                                    + recipeCard.method().toolValue()
                     ))
-                    .withHoverEvent(new HoverEvent.ShowText(
-                            Component.literal("Open the native recipe diagram")
-                    ));
+                    .withHoverEvent(new HoverEvent.ShowText(recipeHoverText(recipeCard)));
             addChat(Component.literal("[Show Recipe]").withStyle(recipeStyle));
         }
         addChat(Component.literal(String.format(
@@ -318,6 +350,20 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         }
         String source = text.substring(marker + "Source:".length()).trim();
         return source.startsWith("https://") || source.startsWith("http://") ? source : null;
+    }
+
+    static Component recipeHoverText(RecipeCardData card) {
+        return recipeHoverText(card.title(), card.method());
+    }
+
+    static Component recipeHoverText(Component title, RecipeMethod method) {
+        return Component.literal("Show ")
+                .append(title.copy())
+                .append(Component.literal(" " + method.recipeLabel()));
+    }
+
+    private static String cardKey(String recipeId, RecipeMethod method) {
+        return recipeId + "|" + method.toolValue();
     }
 
     private static Thread daemonThread(Runnable runnable, String name) {

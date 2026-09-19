@@ -10,7 +10,7 @@ The project currently supports:
 - OpenRouter as the distributable mod's first production provider;
 - live Minecraft Wiki tools through MCP;
 - a concise terminal interface for development;
-- a client-only Fabric 26.2 mod with `/ask`, conversation memory, cancellation, timing, clickable sources, and native recipe diagrams;
+- a client-only Fabric 26.2 mod with `/ask`, conversation memory, cancellation, timing, clickable sources, and native production-method diagrams;
 - an in-game OpenRouter configuration screen; and
 - unit, HTTP contract, and real-client creative-world tests.
 
@@ -22,7 +22,7 @@ Solid lines are implemented today; dashed lines are planned integration points.
 flowchart LR
     CLI["Terminal chat<br/>./assistant"] --> API["Assistant API"]
     MC["Fabric 26.2 client<br/>/ask + config screen"] --> API
-    MC --> RECIPES["Native recipe cards"]
+    MC --> RECIPES["Native method cards<br/>crafting, cooking,<br/>stonecutting, smithing"]
     RECIPES --> GAMEDATA["Minecraft recipe data<br/>+ item sprites"]
 
     API --> MEMORY["20-message<br/>conversation memory"]
@@ -53,7 +53,7 @@ Once installed, join a local world and run:
 ```
 
 The mod stores up to 20 recent user and assistant messages in memory for follow-up questions. `/ask clear` resets that context and `/ask stop` cancels the active request.
-Crafting answers can include a clickable **Show Recipe** action that opens a compact 3×3 diagram rendered from Minecraft's recipe data rather than model-generated ingredients.
+Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Its hover text identifies the item and method, and the resulting card is rendered from Minecraft's recipe data rather than model-generated ingredients. Item icons use Minecraft's normal renderer, including the active resource pack.
 
 ## Development prerequisites
 
