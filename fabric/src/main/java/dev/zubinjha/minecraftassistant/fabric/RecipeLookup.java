@@ -4,5 +4,5 @@ import java.util.Optional;
 
 @FunctionalInterface
 interface RecipeLookup {
-    RecipeLookupResult resolve(String recipeId, Optional<RecipeMethod> method);
+    RecipeLookupResult resolve(String recipeId, Optional<ProductionMethod> method);
 }

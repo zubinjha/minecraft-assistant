@@ -16,6 +16,6 @@ include(
     "fabric",
     "provider-codex",
     "provider-openrouter",
-    "tool-mcp",
+    "tool-mediawiki",
     "cli",
 )

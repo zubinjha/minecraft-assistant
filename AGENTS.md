@@ -24,5 +24,5 @@ This repository contains the Minecraft Assistant project.
 - Run relevant checks before considering a change complete.
 - Do not create commits or publish the repository unless explicitly requested.
 - Keep Minecraft/Fabric code out of the provider, tool transport, and core agent modules.
-- Never block the Minecraft render/main thread with model, network, MCP, or authentication work.
+- Never block the Minecraft render/main thread with model, network, Wiki, or authentication work.
 - Treat API keys, OAuth material, and Codex credentials as secrets; never log or commit them.

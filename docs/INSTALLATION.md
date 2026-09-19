@@ -36,6 +36,7 @@ Prism Launcher is the primary tested path for the current development build.
 /ask config      Open provider settings
 /ask stop        Cancel the active request
 /ask clear       Clear recent conversation memory
+/ask help        Explain every assistant command
 ```
 
 `/mcai ask ...` is retained as a fallback if a server defines a conflicting `/ask` command.
@@ -46,7 +47,8 @@ Prism Launcher is the primary tested path for the current development build.
 - Non-secret settings are stored in `config/minecraft-assistant.json` inside the Minecraft instance.
 - The key is stored separately in `config/minecraft-assistant-credentials.json` and restricted to the current operating-system user where supported.
 - The key is sent only to OpenRouter.
-- Wiki search arguments are sent to the configured Minecraft Wiki MCP service without the provider key.
+- Wiki search terms and page names are sent directly to `minecraft.wiki/api.php` without the provider key.
+- No hosted Minecraft Assistant backend or third-party MCP intermediary is required.
 - Credentials are never intentionally written to Minecraft chat or normal project logs.
 
 Local credential files are convenient but are not equivalent to an operating-system credential vault. OpenRouter browser authentication and stronger cross-platform credential storage remain release-hardening work.

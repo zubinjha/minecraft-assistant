@@ -5,7 +5,7 @@ plugins {
 dependencies {
     implementation(project(":assistant-core"))
     implementation(project(":provider-codex"))
-    implementation(project(":tool-mcp"))
+    implementation(project(":tool-mediawiki"))
 }
 
 application {

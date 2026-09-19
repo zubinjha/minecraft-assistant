@@ -13,6 +13,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -30,6 +31,8 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
             registerMcaiFallback(dispatcher);
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> runtime.close());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                runtime.resetConversationSession());
     }
 
     static MinecraftAssistantRuntime runtimeForTest() {
@@ -45,7 +48,8 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
 
     private LiteralArgumentBuilder<FabricClientCommandSource> command(String name) {
         return literal(name)
-                .executes(context -> usage(context.getSource()))
+                .executes(context -> help(context.getSource()))
+                .then(literal("help").executes(context -> help(context.getSource())))
                 .then(literal("config").executes(context -> {
                     Minecraft minecraft = Minecraft.getInstance();
                     minecraft.schedule(() -> minecraft.gui.setScreen(
@@ -95,11 +99,21 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
                                 })))));
     }
 
-    private static int usage(FabricClientCommandSource source) {
+    private static int help(FabricClientCommandSource source) {
+        source.sendFeedback(Component.literal("Minecraft Assistant").withStyle(ChatFormatting.YELLOW));
+        helpLine(source, "/ask <question>", "Ask a Minecraft question");
+        helpLine(source, "/ask config", "Configure the provider and model");
+        helpLine(source, "/ask stop", "Cancel the current request");
+        helpLine(source, "/ask clear", "Forget conversation history");
+        helpLine(source, "/ask help", "Show this help");
         source.sendFeedback(Component.literal(
-                "Usage: /ask <question> | /ask config | /ask stop | /ask clear"
-        )
-                .withStyle(ChatFormatting.YELLOW));
+                "Remembers the last 10 exchanges for the current world or server session."
+        ).withStyle(ChatFormatting.GRAY));
         return 1;
+    }
+
+    private static void helpLine(FabricClientCommandSource source, String command, String description) {
+        source.sendFeedback(Component.literal(command).withStyle(ChatFormatting.AQUA)
+                .append(Component.literal(" — " + description).withStyle(ChatFormatting.GRAY)));
     }
 }

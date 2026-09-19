@@ -1,8 +1,8 @@
 # Minecraft AI Assistant — Technical Specification
 
-**Status:** Draft for implementation
+**Status:** Implemented alpha; this document records the current architecture and remaining work
 
-**Research snapshot:** 2026-09-18
+**Research snapshot:** 2026-09-19
 
 ## 1. Purpose
 
@@ -22,7 +22,7 @@ Implementation order is intentionally decoupled from Minecraft:
 
 1. Build and test the standalone agent core.
 2. Add one real LLM provider, starting with OpenRouter.
-3. Connect Minecraft Wiki tools through MCP and validate grounded answers from the CLI.
+3. Connect Minecraft Wiki tools directly through MediaWiki and validate grounded answers from the CLI.
 4. Add Ollama and OpenAI API-key providers behind the same abstraction.
 5. Integrate the proven core into a client-only Fabric mod.
 6. Add in-game configuration and credential handling.
@@ -41,7 +41,7 @@ This produces two meaningful milestones:
 - Normalize the capabilities needed for text generation and application-executed tool calls across providers.
 - Support asynchronous execution, cancellation, timeouts, bounded loops, and useful errors.
 - Use live Wiki retrieval rather than downloading or embedding the Wiki.
-- Make the Wiki transport and endpoint replaceable.
+- Keep the direct Wiki API endpoint replaceable without exposing arbitrary tool servers.
 - Test core behavior thoroughly without launching Minecraft.
 - Keep Minecraft-version-sensitive code isolated in one module.
 - Never send `/ask` content or credentials to the Minecraft server.
@@ -77,7 +77,7 @@ The initial implementation will not include:
 - Use Java and a Gradle multi-module build.
 - Compile reusable non-Minecraft modules for Java 17 unless a selected dependency requires a newer baseline.
 - Let the Fabric module use the Java version required by its target Minecraft release.
-- Select and pin the exact Minecraft, Fabric Loader, Fabric API, Loom, MCP SDK, and library versions when their implementation phase begins.
+- Pin Minecraft 26.2, Fabric Loader, Fabric API, Loom, Java, and reusable library versions in Gradle.
 - Keep dependency versions centralized in the Gradle version catalog or root build configuration.
 
 The Fabric research snapshot currently documents Minecraft 26.2-era development and JDK 25. This is evidence that the Fabric module must own its runtime baseline; it is not a decision to target that Minecraft version now.
@@ -87,12 +87,12 @@ The Fabric research snapshot currently documents Minecraft 26.2-era development 
 - Prefer the JDK HTTP client for provider requests unless an official SDK materially reduces complexity.
 - Use one JSON library across reusable modules.
 - Do not introduce Spring or a large agent framework for the MVP.
-- Use the official MCP Java SDK for the first MCP client implementation, subject to a small dependency and compatibility spike.
+- Use the JDK asynchronous HTTP client for direct MediaWiki access and the existing Jackson dependency for JSON.
 
 ### 5.3 Asynchrony
 
 - Network and tool operations must expose asynchronous APIs.
-- No provider, MCP, OAuth, discovery, or Wiki call may run on Minecraft's render thread.
+- No provider, OAuth, discovery, or Wiki call may run on Minecraft's render thread.
 - The CLI may block only at its outermost command boundary while awaiting an asynchronous operation.
 - Minecraft UI updates must be scheduled back onto the Minecraft client thread.
 
@@ -119,7 +119,7 @@ The Fabric research snapshot currently documents Minecraft 26.2-era development 
 ├── provider-ollama/
 ├── provider-openai/
 ├── provider-codex/
-├── tool-mcp/
+├── tool-mediawiki/
 ├── cli/
 ├── fabric/
 ├── build.gradle.kts
@@ -136,7 +136,7 @@ Module responsibilities:
 | `provider-ollama` | Ollama reachability, model discovery, capability checks, chat mapping, and response normalization |
 | `provider-openai` | OpenAI API-key integration using the Responses API |
 | `provider-codex` | Development-only ChatGPT integration through the official Codex app-server |
-| `tool-mcp` | MCP lifecycle, discovery, tool invocation, validation, and conversion to core tool types |
+| `tool-mediawiki` | Direct async MediaWiki client, caching, limits, and six Minecraft Wiki tools |
 | `cli` | Standalone configuration and end-to-end development/test surface |
 | `fabric` | Client commands, Minecraft-thread coordination, chat rendering, and configuration UI |
 
@@ -144,12 +144,12 @@ Dependencies must point inward:
 
 ```text
 provider-* ──> assistant-core
-tool-mcp ────> assistant-core
-cli ─────────> assistant-core + provider-* + tool-mcp
-fabric ──────> assistant-core + provider-* + tool-mcp
+tool-mediawiki ─> assistant-core
+cli ─────────> assistant-core + provider-* + tool-mediawiki
+fabric ──────> assistant-core + provider-* + tool-mediawiki
 ```
 
-`assistant-core` must not depend on Fabric, Minecraft classes, provider-specific SDK types, or MCP SDK types.
+`assistant-core` must not depend on Fabric, Minecraft classes, provider-specific SDK types, or MediaWiki details.
 
 ## 7. Core Domain Model
 
@@ -221,7 +221,7 @@ Tool arguments must be schema-validated before execution. Unknown tools, malform
 
 ### 7.4 Tool sources
 
-MCP is one way to supply tools, not a core concept:
+Tool transport is not a core concept:
 
 ```java
 interface ToolSource extends AutoCloseable {
@@ -229,7 +229,7 @@ interface ToolSource extends AutoCloseable {
 }
 ```
 
-This boundary allows a later direct MediaWiki adapter and Minecraft game-state tools to coexist with or replace MCP tools.
+The direct MediaWiki adapter and Minecraft-native tools both implement this boundary without coupling providers to either source.
 
 ### 7.5 Agent events
 
@@ -353,34 +353,28 @@ Therefore:
 - investigate whether an official, distributable third-party path exists when this phase begins;
 - ship API-key providers without this option if no supportable path exists.
 
-## 11. Minecraft Wiki and MCP
+## 11. Direct Minecraft Wiki integration
 
-### 11.1 Initial integration
+### 11.1 Integration
 
-The researched `L3-N0X/Minecraft-Wiki-MCP` project exposes search, page, section, redirect, category, and category-member tools. Its current Python rewrite offers a public Streamable HTTP endpoint:
+The mod and CLI call the official Minecraft Wiki MediaWiki endpoint directly:
 
 ```text
-https://minecraft-wiki-mcp.goett.top/mcp
+https://minecraft.wiki/api.php
 ```
 
-The endpoint and core tool calls were successfully exercised during research on 2026-09-18. This is useful validation, not an uptime or compatibility guarantee.
+The in-process Java adapter preserves six stable model-facing tools: search, page retrieval, section retrieval, categories, category members, and redirect resolution. Tool objects are created without network traffic; HTTP begins only when a model invokes a Wiki tool. This removes the former hosted MCP intermediary and its SDK/runtime dependencies.
 
-Initial CLI development may use that hosted endpoint, but the URL must be configurable from the beginning. The application must identify it as a third-party network service.
+### 11.2 Client requirements
 
-### 11.2 MCP client requirements
-
-- Use Streamable HTTP through the official MCP Java SDK.
-- Perform protocol initialization and capability negotiation.
-- Discover tools rather than hard-coding the complete remote schema.
-- Map discovered tools into core `Tool` objects.
-- Preserve stable, collision-safe tool names.
-- Validate tool arguments locally where possible.
-- impose connection, request, response-size, and total-run limits;
-- close MCP sessions and transports cleanly;
-- expose connection failures separately from Wiki search failures;
-- allow endpoint replacement through configuration.
-
-Do not expose arbitrary user-configured MCP servers in the MVP. The initial configuration accepts one Minecraft Wiki MCP endpoint, limiting the security surface.
+- Reuse one JDK `HttpClient` with a 10-second connection timeout and 20-second request timeout.
+- Cap HTTP responses at 2 MiB and model-visible tool output below the harness's 64 KiB limit.
+- Retry bounded `Retry-After` responses once.
+- Keep a session-only 100-entry, ten-minute LRU cache.
+- Cancel the underlying asynchronous request when the assistant request is cancelled.
+- Resolve redirects and retain canonical page and history URLs.
+- Return plaintext extracts and derive stable local section indexes from extract headings.
+- Accept HTTPS endpoints, plus loopback HTTP for controlled local testing.
 
 ### 11.3 Retrieval strategy
 
@@ -394,18 +388,9 @@ The preferred model workflow is:
 
 Avoid fetching full pages unless narrower retrieval is insufficient. Do not download, embed, or persist a Wiki corpus.
 
-### 11.4 Dependency and deployment risk
+### 11.4 Availability and deployment risk
 
-The public MCP instance is not controlled by this project. Before a public mod release, choose one of:
-
-1. depend on the hosted endpoint with clear disclosure and graceful fallback;
-2. operate a project-controlled remote MCP deployment;
-3. implement the small required subset directly against the MediaWiki API;
-4. allow an advanced user to run the MCP server separately, without making that the default installation path.
-
-Bundling and launching the Python MCP implementation inside the mod is rejected for the MVP because it conflicts with minimal installation and multiplies packaging/runtime risk.
-
-The `ToolSource` boundary must make this deployment decision replaceable without changing the agent or provider layers.
+The project no longer depends on a hosted intermediary or companion process. It still depends on Minecraft Wiki availability and rate policies, so Wiki failures remain isolated tool failures: ordinary questions and native Minecraft guides continue working, and a retrieval outage must not crash the game.
 
 ### 11.5 Attribution and licensing
 
@@ -431,7 +416,7 @@ Non-secret configuration includes:
 - selected provider;
 - selected model;
 - provider endpoint overrides;
-- Minecraft Wiki MCP endpoint;
+- Minecraft Wiki API endpoint;
 - response style;
 - timeouts and loop limits where exposed;
 - insecure local-network opt-ins.
@@ -451,7 +436,7 @@ Unknown fields should be ignored when safe so configuration can evolve. Invalid 
 ### 12.3 Network boundaries
 
 - Provider credentials are sent only to their configured provider origin.
-- Wiki MCP requests contain the question-derived search terms needed for retrieval but no provider keys.
+- Direct MediaWiki requests contain the question-derived search terms needed for retrieval but no provider keys.
 - Ollama is clearly labeled as local by default; remote custom endpoints are clearly labeled as network services.
 - Redirects must not forward authorization headers to another origin.
 - HTTPS certificate verification remains enabled for internet endpoints.
@@ -467,7 +452,7 @@ Define typed failures at module boundaries, including:
 - provider unavailable;
 - unsupported model capability;
 - malformed provider response;
-- MCP connection/protocol failure;
+- Wiki connection, HTTP, API, or malformed-response failure;
 - unknown or invalid tool call;
 - tool timeout or oversized output;
 - cancellation;
@@ -490,7 +475,7 @@ assistant models
 assistant doctor
 ```
 
-`doctor` reports configuration presence, provider reachability, selected-model availability, MCP reachability, and discovered Wiki tools without printing secrets.
+`doctor` reports configuration presence, provider reachability, selected-model availability, direct MediaWiki reachability, and available Wiki tools without printing secrets.
 
 Example development flow:
 
@@ -544,10 +529,10 @@ Each adapter runs the same reusable contract suite against recorded or local HTT
 
 Optional live tests are opt-in, excluded from normal CI, and require explicitly named environment variables.
 
-### 15.3 MCP tests
+### 15.3 MediaWiki tests
 
-- Test protocol initialization, discovery, calls, failures, and shutdown against a controllable local test server.
-- Maintain an opt-in live smoke test for the configured Minecraft Wiki MCP endpoint.
+- Test all six tools, redirects, sections, canonical URLs, escaping, caching, truncation, cancellation, timeouts, bounded retries, malformed responses, and outages against a local fixture server.
+- Maintain an opt-in live smoke test for the configured Minecraft Wiki API endpoint.
 - Treat live endpoint failures as diagnostic signals, not deterministic CI failures.
 - Test response-size limits and malicious instruction-like text in tool results.
 
@@ -586,7 +571,7 @@ After the core is stable, test:
 - cancellation;
 - chat formatting and clickable URLs;
 - configuration migration;
-- missing provider, invalid key, offline MCP, and unavailable Ollama behavior.
+- missing provider, invalid key, offline Wiki, and unavailable Ollama behavior.
 
 ## 16. Fabric Integration
 
@@ -685,18 +670,18 @@ Deliver:
 
 Exit criteria: the CLI can use the requested ChatGPT model to call a locally owned test tool. This validates the harness but does not commit the shipped Fabric mod to an external Codex process.
 
-### Phase 3 — Minecraft Wiki MCP
+### Phase 3 — Direct Minecraft Wiki retrieval
 
 Deliver:
 
-- Streamable HTTP MCP client;
-- dynamic tool discovery and core mapping;
-- configurable endpoint;
+- async Java MediaWiki client;
+- six stable Wiki tools and core mapping;
+- configurable API endpoint;
 - provenance/source collection;
 - mock integration tests and live smoke test;
 - grounding evaluation runner.
 
-Exit criteria: the CLI answers the evaluation questions with appropriate Wiki calls, concise text, and source links, while handling MCP outages cleanly.
+Exit criteria: the CLI answers the evaluation questions with appropriate direct Wiki calls, concise text, and source links, while handling Wiki outages cleanly.
 
 ### Phase 4 — Production providers
 
@@ -766,8 +751,6 @@ These decisions are intentionally deferred until their implementation phase:
 - first target Minecraft/Fabric version;
 - exact default/recommended models;
 - final JSON and logging libraries;
-- official MCP Java SDK version after compatibility testing;
-- hosted MCP, project-controlled MCP, or direct MediaWiki strategy for public release;
 - credential persistence backend for the Fabric mod;
 - project software license;
 - Minecraft Wiki licensing/attribution approval for the intended distribution model;
@@ -788,7 +771,5 @@ These links were checked during the 2026-09-18 research pass. Version-sensitive 
 - [Ollama: list models](https://docs.ollama.com/api/tags)
 - [OpenAI: function calling with the Responses API](https://developers.openai.com/api/docs/guides/function-calling)
 - [OpenAI: Codex app-server](https://learn.chatgpt.com/docs/app-server)
-- [Official MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk)
-- [Minecraft Wiki MCP](https://github.com/L3-N0X/Minecraft-Wiki-MCP)
 - [MediaWiki API](https://www.mediawiki.org/wiki/API:Main_page)
 - [Minecraft Wiki generative AI policy](https://minecraft.wiki/w/Minecraft_Wiki:Generative_AI_policy)

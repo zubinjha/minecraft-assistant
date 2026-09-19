@@ -27,12 +27,12 @@ final class ShowProcessTool implements Tool {
 
     private final Executor clientExecutor;
     private final RecipeLookup resolver;
-    private final RecipePresentationCollector presentations;
+    private final ProductionPresentationCollector presentations;
 
     ShowProcessTool(
             Minecraft minecraft,
             RecipeLookup resolver,
-            RecipePresentationCollector presentations
+            ProductionPresentationCollector presentations
     ) {
         this(minecraft::execute, resolver, presentations);
     }
@@ -40,7 +40,7 @@ final class ShowProcessTool implements Tool {
     ShowProcessTool(
             Executor clientExecutor,
             RecipeLookup resolver,
-            RecipePresentationCollector presentations
+            ProductionPresentationCollector presentations
     ) {
         this.clientExecutor = clientExecutor;
         this.resolver = resolver;
@@ -72,10 +72,14 @@ final class ShowProcessTool implements Tool {
                         + " has an invalid namespaced recipe_id.");
             }
             String methodValue = rawStep.path("method").asText("").trim();
-            Optional<RecipeMethod> method = RecipeMethod.parse(methodValue);
+            Optional<ProductionMethod> method = ProductionMethod.parse(methodValue);
             if (method.isEmpty()) {
                 return completed("No production process was created: step " + (index + 1)
                         + " has an unsupported method. Use one of: " + supportedMethods() + ".");
+            }
+            if (!method.get().isRecipe()) {
+                return completed("No production process was created: step " + (index + 1)
+                        + " must use a recipe method. Use the matching workstation guide tool instead.");
             }
             requestedSteps.add(new RequestedStep(recipeId, method.get()));
         }
@@ -84,7 +88,7 @@ final class ShowProcessTool implements Tool {
         clientExecutor.execute(() -> {
             try {
                 cancellation.throwIfCancelled();
-                List<RecipeCardData> cards = new ArrayList<>();
+                List<ProductionCardData> cards = new ArrayList<>();
                 for (int index = 0; index < requestedSteps.size(); index++) {
                     RequestedStep step = requestedSteps.get(index);
                     RecipeLookupResult lookup = resolver.resolve(step.recipeId(), Optional.of(step.method()));
@@ -136,8 +140,10 @@ final class ShowProcessTool implements Tool {
                 .put("type", "string")
                 .put("description", "Production method for this step");
         var methods = json.arrayNode();
-        for (RecipeMethod value : RecipeMethod.values()) {
-            methods.add(value.toolValue());
+        for (ProductionMethod value : ProductionMethod.values()) {
+            if (value.isRecipe()) {
+                methods.add(value.toolValue());
+            }
         }
         method.set("enum", methods);
         stepProperties.set("method", method);
@@ -160,8 +166,9 @@ final class ShowProcessTool implements Tool {
     }
 
     private static String supportedMethods() {
-        return java.util.Arrays.stream(RecipeMethod.values())
-                .map(RecipeMethod::toolValue)
+        return java.util.Arrays.stream(ProductionMethod.values())
+                .filter(ProductionMethod::isRecipe)
+                .map(ProductionMethod::toolValue)
                 .collect(Collectors.joining(", "));
     }
 
@@ -173,6 +180,6 @@ final class ShowProcessTool implements Tool {
         return ambiguous.candidates().size() > 8 ? joined + ", and more" : joined;
     }
 
-    private record RequestedStep(String recipeId, RecipeMethod method) {
+    private record RequestedStep(String recipeId, ProductionMethod method) {
     }
 }

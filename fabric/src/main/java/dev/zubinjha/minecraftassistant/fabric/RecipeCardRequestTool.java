@@ -23,12 +23,12 @@ final class RecipeCardRequestTool implements Tool {
 
     private final Executor clientExecutor;
     private final RecipeLookup resolver;
-    private final RecipePresentationCollector presentations;
+    private final ProductionPresentationCollector presentations;
 
     RecipeCardRequestTool(
             Minecraft minecraft,
             RecipeLookup resolver,
-            RecipePresentationCollector presentations
+            ProductionPresentationCollector presentations
     ) {
         this(minecraft::execute, resolver, presentations);
     }
@@ -36,7 +36,7 @@ final class RecipeCardRequestTool implements Tool {
     RecipeCardRequestTool(
             Executor clientExecutor,
             RecipeLookup resolver,
-            RecipePresentationCollector presentations
+            ProductionPresentationCollector presentations
     ) {
         this.clientExecutor = clientExecutor;
         this.resolver = resolver;
@@ -61,7 +61,7 @@ final class RecipeCardRequestTool implements Tool {
             ));
         }
         String methodValue = arguments.path("method").asText("").trim();
-        Optional<RecipeMethod> method = RecipeMethod.parse(methodValue);
+        Optional<ProductionMethod> method = ProductionMethod.parse(methodValue);
         if (!methodValue.isEmpty() && method.isEmpty()) {
             return CompletableFuture.completedFuture(ToolExecutionResult.text(
                     "No recipe card was created: method was unsupported. Use one of: "
@@ -76,12 +76,15 @@ final class RecipeCardRequestTool implements Tool {
                 RecipeLookupResult lookup = resolver.resolve(parsed.toString(), method);
                 switch (lookup) {
                     case RecipeLookupResult.Found found -> {
-                        RecipeCardData card = found.card();
+                        ProductionCardData card = found.card();
                         presentations.add(card);
+                        String action = presentations.snapshot()
+                                .map(MinecraftAssistantRuntime::presentationButtonLabel)
+                                .orElse("Show Recipe");
                         result.complete(ToolExecutionResult.text(
                                 "A native " + card.method().recipeLabel() + " card is ready for "
                                         + card.recipeId() + ". Ingredients: " + card.ingredientSummary()
-                                        + ". Briefly tell the player to use the Show Recipe button."
+                                        + ". Briefly tell the player to use the " + action + " button."
                         ));
                     }
                     case RecipeLookupResult.Ambiguous ambiguous -> result.complete(ToolExecutionResult.text(
@@ -113,8 +116,10 @@ final class RecipeCardRequestTool implements Tool {
                 .put("type", "string")
                 .put("description", "Production method matching the player's question; omit only when unambiguous");
         var methods = json.arrayNode();
-        for (RecipeMethod value : RecipeMethod.values()) {
-            methods.add(value.toolValue());
+        for (ProductionMethod value : ProductionMethod.values()) {
+            if (value.isRecipe()) {
+                methods.add(value.toolValue());
+            }
         }
         method.set("enum", methods);
         properties.set("method", method);
@@ -125,8 +130,9 @@ final class RecipeCardRequestTool implements Tool {
     }
 
     private static String supportedMethods() {
-        return java.util.Arrays.stream(RecipeMethod.values())
-                .map(RecipeMethod::toolValue)
+        return java.util.Arrays.stream(ProductionMethod.values())
+                .filter(ProductionMethod::isRecipe)
+                .map(ProductionMethod::toolValue)
                 .collect(java.util.stream.Collectors.joining(", "));
     }
 

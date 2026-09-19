@@ -20,20 +20,20 @@ import org.junit.jupiter.api.Test;
 final class RecipeToolsTest {
     @Test
     void showProcessResolvesAllStepsInOrderAndOverridesCollectedCards() {
-        RecipeCardData unrelated = crafting("minecraft:chest");
-        RecipeCardData glass = cooking("minecraft:glass");
-        RecipeCardData panes = crafting("minecraft:glass_pane");
+        ProductionCardData unrelated = crafting("minecraft:chest");
+        ProductionCardData glass = cooking("minecraft:glass");
+        ProductionCardData panes = crafting("minecraft:glass_pane");
         RecordingLookup lookup = new RecordingLookup()
-                .result("minecraft:glass", RecipeMethod.SMELTING, new RecipeLookupResult.Found(glass))
-                .result("minecraft:glass_pane", RecipeMethod.CRAFTING, new RecipeLookupResult.Found(panes));
-        RecipePresentationCollector collector = new RecipePresentationCollector();
+                .result("minecraft:glass", ProductionMethod.SMELTING, new RecipeLookupResult.Found(glass))
+                .result("minecraft:glass_pane", ProductionMethod.CRAFTING, new RecipeLookupResult.Found(panes));
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
         collector.add(unrelated);
 
         ToolExecutionResult result = execute(
                 new ShowProcessTool(Runnable::run, lookup, collector),
                 processArguments(
-                        step("minecraft:glass", RecipeMethod.SMELTING),
-                        step("minecraft:glass_pane", RecipeMethod.CRAFTING)
+                        step("minecraft:glass", ProductionMethod.SMELTING),
+                        step("minecraft:glass_pane", ProductionMethod.CRAFTING)
                 )
         );
 
@@ -42,8 +42,8 @@ final class RecipeToolsTest {
                 "minecraft:glass|smelting",
                 "minecraft:glass_pane|crafting"
         ), lookup.requests);
-        RecipePresentation.Sequence sequence = assertInstanceOf(
-                RecipePresentation.Sequence.class,
+        ProductionPresentation.Sequence sequence = assertInstanceOf(
+                ProductionPresentation.Sequence.class,
                 collector.snapshot().orElseThrow()
         );
         assertEquals(List.of(glass, panes), sequence.cards());
@@ -51,29 +51,29 @@ final class RecipeToolsTest {
 
     @Test
     void partialFailureDoesNotPublishAPartialSequence() {
-        RecipeCardData unrelated = crafting("minecraft:chest");
-        RecipeCardData glass = cooking("minecraft:glass");
+        ProductionCardData unrelated = crafting("minecraft:chest");
+        ProductionCardData glass = cooking("minecraft:glass");
         RecordingLookup lookup = new RecordingLookup()
-                .result("minecraft:glass", RecipeMethod.SMELTING, new RecipeLookupResult.Found(glass))
+                .result("minecraft:glass", ProductionMethod.SMELTING, new RecipeLookupResult.Found(glass))
                 .result(
                         "minecraft:glass_pane",
-                        RecipeMethod.CRAFTING,
+                        ProductionMethod.CRAFTING,
                         new RecipeLookupResult.Missing("unsupported display")
                 );
-        RecipePresentationCollector collector = new RecipePresentationCollector();
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
         collector.add(unrelated);
 
         ToolExecutionResult result = execute(
                 new ShowProcessTool(Runnable::run, lookup, collector),
                 processArguments(
-                        step("minecraft:glass", RecipeMethod.SMELTING),
-                        step("minecraft:glass_pane", RecipeMethod.CRAFTING)
+                        step("minecraft:glass", ProductionMethod.SMELTING),
+                        step("minecraft:glass_pane", ProductionMethod.CRAFTING)
                 )
         );
 
         assertTrue(result.content().contains("step 2"));
-        RecipePresentation.Single fallback = assertInstanceOf(
-                RecipePresentation.Single.class,
+        ProductionPresentation.Single fallback = assertInstanceOf(
+                ProductionPresentation.Single.class,
                 collector.snapshot().orElseThrow()
         );
         assertEquals(unrelated, fallback.card());
@@ -81,29 +81,29 @@ final class RecipeToolsTest {
 
     @Test
     void ambiguityNamesTheFailingStepAndCandidates() {
-        RecipeCardData glass = cooking("minecraft:glass");
+        ProductionCardData glass = cooking("minecraft:glass");
         RecordingLookup lookup = new RecordingLookup()
-                .result("minecraft:glass", RecipeMethod.SMELTING, new RecipeLookupResult.Found(glass))
+                .result("minecraft:glass", ProductionMethod.SMELTING, new RecipeLookupResult.Found(glass))
                 .result(
                         "minecraft:stone_bricks",
-                        RecipeMethod.CRAFTING,
+                        ProductionMethod.CRAFTING,
                         new RecipeLookupResult.Ambiguous(List.of(
                                 new RecipeLookupResult.Candidate(
-                                        "minecraft:stone_bricks", RecipeMethod.CRAFTING
+                                        "minecraft:stone_bricks", ProductionMethod.CRAFTING
                                 ),
                                 new RecipeLookupResult.Candidate(
                                         "minecraft:stone_bricks_from_stone_stonecutting",
-                                        RecipeMethod.STONECUTTING
+                                        ProductionMethod.STONECUTTING
                                 )
                         ))
                 );
-        RecipePresentationCollector collector = new RecipePresentationCollector();
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
 
         ToolExecutionResult result = execute(
                 new ShowProcessTool(Runnable::run, lookup, collector),
                 processArguments(
-                        step("minecraft:glass", RecipeMethod.SMELTING),
-                        step("minecraft:stone_bricks", RecipeMethod.CRAFTING)
+                        step("minecraft:glass", ProductionMethod.SMELTING),
+                        step("minecraft:stone_bricks", ProductionMethod.CRAFTING)
                 )
         );
 
@@ -115,16 +115,16 @@ final class RecipeToolsTest {
     @Test
     void showProcessEnforcesTwoToSixSteps() {
         RecordingLookup lookup = new RecordingLookup();
-        RecipePresentationCollector collector = new RecipePresentationCollector();
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
         ShowProcessTool tool = new ShowProcessTool(Runnable::run, lookup, collector);
 
         ToolExecutionResult tooShort = execute(tool, processArguments(
-                step("minecraft:glass", RecipeMethod.SMELTING)
+                step("minecraft:glass", ProductionMethod.SMELTING)
         ));
         ObjectNode tooLongArguments = JsonNodeFactory.instance.objectNode();
         ArrayNode tooLong = tooLongArguments.putArray("steps");
         for (int index = 0; index < 7; index++) {
-            tooLong.add(step("minecraft:glass", RecipeMethod.SMELTING));
+            tooLong.add(step("minecraft:glass", ProductionMethod.SMELTING));
         }
         ToolExecutionResult tooLongResult = execute(tool, tooLongArguments);
 
@@ -136,20 +136,20 @@ final class RecipeToolsTest {
 
     @Test
     void independentRecipeCallsProduceAnOrderedCollection() {
-        RecipeCardData glass = cooking("minecraft:glass");
-        RecipeCardData panes = crafting("minecraft:glass_pane");
+        ProductionCardData glass = cooking("minecraft:glass");
+        ProductionCardData panes = crafting("minecraft:glass_pane");
         RecordingLookup lookup = new RecordingLookup()
-                .result("minecraft:glass", RecipeMethod.SMELTING, new RecipeLookupResult.Found(glass))
-                .result("minecraft:glass_pane", RecipeMethod.CRAFTING, new RecipeLookupResult.Found(panes));
-        RecipePresentationCollector collector = new RecipePresentationCollector();
+                .result("minecraft:glass", ProductionMethod.SMELTING, new RecipeLookupResult.Found(glass))
+                .result("minecraft:glass_pane", ProductionMethod.CRAFTING, new RecipeLookupResult.Found(panes));
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
         RecipeCardRequestTool tool = new RecipeCardRequestTool(Runnable::run, lookup, collector);
 
-        execute(tool, recipeArguments("minecraft:glass", RecipeMethod.SMELTING));
-        execute(tool, recipeArguments("minecraft:glass_pane", RecipeMethod.CRAFTING));
-        execute(tool, recipeArguments("minecraft:glass", RecipeMethod.SMELTING));
+        execute(tool, recipeArguments("minecraft:glass", ProductionMethod.SMELTING));
+        execute(tool, recipeArguments("minecraft:glass_pane", ProductionMethod.CRAFTING));
+        execute(tool, recipeArguments("minecraft:glass", ProductionMethod.SMELTING));
 
-        RecipePresentation.Collection collection = assertInstanceOf(
-                RecipePresentation.Collection.class,
+        ProductionPresentation.Collection collection = assertInstanceOf(
+                ProductionPresentation.Collection.class,
                 collector.snapshot().orElseThrow()
         );
         assertEquals(List.of(glass, panes), collection.cards());
@@ -171,30 +171,30 @@ final class RecipeToolsTest {
         return arguments;
     }
 
-    private static ObjectNode step(String recipeId, RecipeMethod method) {
+    private static ObjectNode step(String recipeId, ProductionMethod method) {
         return JsonNodeFactory.instance.objectNode()
                 .put("recipe_id", recipeId)
                 .put("method", method.toolValue());
     }
 
-    private static ObjectNode recipeArguments(String recipeId, RecipeMethod method) {
+    private static ObjectNode recipeArguments(String recipeId, ProductionMethod method) {
         return step(recipeId, method);
     }
 
-    private static RecipeCardData crafting(String id) {
-        RecipeCardData.Slot resultSlot = RecipeCardData.Slot.of(ItemStack.EMPTY);
-        return new RecipeCardData.Crafting(id, 1, 1, List.of(resultSlot), resultSlot, false);
+    private static ProductionCardData crafting(String id) {
+        ProductionCardData.Slot resultSlot = ProductionCardData.Slot.of(ItemStack.EMPTY);
+        return new ProductionCardData.Crafting(id, 1, 1, List.of(resultSlot), resultSlot, false);
     }
 
-    private static RecipeCardData cooking(String id) {
-        RecipeCardData.Slot resultSlot = RecipeCardData.Slot.of(ItemStack.EMPTY);
-        return new RecipeCardData.Cooking(
+    private static ProductionCardData cooking(String id) {
+        ProductionCardData.Slot resultSlot = ProductionCardData.Slot.of(ItemStack.EMPTY);
+        return new ProductionCardData.Cooking(
                 id,
-                RecipeMethod.SMELTING,
-                RecipeCardData.Slot.of(ItemStack.EMPTY),
-                new RecipeCardData.Slot(List.of(), true),
+                ProductionMethod.SMELTING,
+                ProductionCardData.Slot.of(ItemStack.EMPTY),
+                new ProductionCardData.Slot(List.of(), true),
                 resultSlot,
-                RecipeCardData.Slot.of(ItemStack.EMPTY),
+                ProductionCardData.Slot.of(ItemStack.EMPTY),
                 200,
                 0.1F
         );
@@ -204,14 +204,14 @@ final class RecipeToolsTest {
         private final Map<String, RecipeLookupResult> results = new HashMap<>();
         private final List<String> requests = new ArrayList<>();
 
-        RecordingLookup result(String id, RecipeMethod method, RecipeLookupResult result) {
+        RecordingLookup result(String id, ProductionMethod method, RecipeLookupResult result) {
             results.put(key(id, method), result);
             return this;
         }
 
         @Override
-        public RecipeLookupResult resolve(String recipeId, Optional<RecipeMethod> method) {
-            RecipeMethod requiredMethod = method.orElseThrow();
+        public RecipeLookupResult resolve(String recipeId, Optional<ProductionMethod> method) {
+            ProductionMethod requiredMethod = method.orElseThrow();
             requests.add(key(recipeId, requiredMethod));
             return results.getOrDefault(
                     key(recipeId, requiredMethod),
@@ -219,7 +219,7 @@ final class RecipeToolsTest {
             );
         }
 
-        private static String key(String id, RecipeMethod method) {
+        private static String key(String id, ProductionMethod method) {
             return id + "|" + method.toolValue();
         }
     }

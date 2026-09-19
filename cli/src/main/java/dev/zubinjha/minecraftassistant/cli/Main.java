@@ -18,7 +18,7 @@ import dev.zubinjha.minecraftassistant.core.Tool;
 import dev.zubinjha.minecraftassistant.core.ToolDefinition;
 import dev.zubinjha.minecraftassistant.core.ToolExecutionResult;
 import dev.zubinjha.minecraftassistant.core.ToolRegistry;
-import dev.zubinjha.minecraftassistant.mcp.McpToolSource;
+import dev.zubinjha.minecraftassistant.mediawiki.MinecraftWikiToolSource;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -39,7 +39,7 @@ public final class Main {
     private static final String DEFAULT_MODEL = "gpt-5.6-luna";
     private static final String DEFAULT_EFFORT = "medium";
     private static final int MAX_HISTORY_MESSAGES = 20;
-    private static final String WIKI_MCP_ENVIRONMENT = "MINECRAFT_ASSISTANT_WIKI_MCP_URL";
+    private static final String WIKI_API_ENVIRONMENT = "MINECRAFT_ASSISTANT_WIKI_API_URL";
 
     private Main() {
     }
@@ -80,17 +80,13 @@ public final class Main {
             return thread;
         });
 
-        McpToolSource wiki = null;
+        MinecraftWikiToolSource wiki = null;
         try {
             ToolRegistry tools;
             if (command.equals("smoke")) {
                 tools = new ToolRegistry(List.of(new SmokeTool(smokeToolCalled)));
             } else if (usesWiki(command)) {
-                wiki = McpToolSource.connectMinecraftWiki(
-                        wikiEndpoint(),
-                        worker,
-                        CancellationToken.NONE
-                ).toCompletableFuture().join();
+                wiki = new MinecraftWikiToolSource(wikiApiUrl(), worker);
                 tools = new ToolRegistry(wiki.tools());
             } else {
                 tools = ToolRegistry.empty();
@@ -102,8 +98,8 @@ public final class Main {
                     .join();
             try (assistant) {
                 return switch (command) {
-                    case "chat" -> chat(assistant, tools, out, err);
-                    case "doctor" -> doctor(assistant, tools, out);
+                    case "chat" -> chat(assistant, tools, wiki, out, err);
+                    case "doctor" -> doctor(assistant, tools, wiki, out);
                     case "models" -> models(assistant, out);
                     case "ask" -> ask(assistant, Arrays.copyOfRange(args, 1, args.length), out, err);
                     case "smoke" -> smoke(assistant, smokeToolCalled, out, err);
@@ -124,7 +120,12 @@ public final class Main {
         }
     }
 
-    private static int doctor(CodexAppServerAssistant assistant, ToolRegistry tools, PrintStream out) {
+    private static int doctor(
+            CodexAppServerAssistant assistant,
+            ToolRegistry tools,
+            MinecraftWikiToolSource wiki,
+            PrintStream out
+    ) {
         CodexAccountStatus account = assistant.accountStatus().toCompletableFuture().join();
         List<CodexModel> models = assistant.listModels().toCompletableFuture().join();
         String requestedModel = selectedModel();
@@ -137,7 +138,8 @@ public final class Main {
                 : "not signed in"));
         out.println("Selected model: " + requestedModel + (model == null ? " (unavailable)" : " (available)"));
         out.println("Reasoning effort: " + selectedEffort());
-        out.println("Minecraft Wiki MCP: reachable (" + tools.size() + " tools)");
+        String wikiName = wiki.healthCheck(CancellationToken.NONE).toCompletableFuture().join();
+        out.println("Minecraft Wiki API: reachable (" + wikiName + ", " + tools.size() + " tools)");
         return account.authenticated() && model != null && tools.size() > 0 ? 0 : 1;
     }
 
@@ -178,6 +180,7 @@ public final class Main {
     private static int chat(
             CodexAppServerAssistant assistant,
             ToolRegistry tools,
+            MinecraftWikiToolSource wiki,
             PrintStream out,
             PrintStream err
     ) {
@@ -215,7 +218,7 @@ public final class Main {
                     continue;
                 }
                 case "/status", "/doctor" -> {
-                    doctor(assistant, tools, out);
+                    doctor(assistant, tools, wiki, out);
                     out.println();
                     continue;
                 }
@@ -369,10 +372,10 @@ public final class Main {
         return environmentOrDefault("MINECRAFT_ASSISTANT_REASONING_EFFORT", DEFAULT_EFFORT);
     }
 
-    private static String wikiEndpoint() {
+    private static String wikiApiUrl() {
         return environmentOrDefault(
-                WIKI_MCP_ENVIRONMENT,
-                McpToolSource.DEFAULT_MINECRAFT_WIKI_ENDPOINT
+                WIKI_API_ENVIRONMENT,
+                MinecraftWikiToolSource.DEFAULT_API_URL
         );
     }
 
@@ -427,8 +430,8 @@ public final class Main {
         out.println("Environment:");
         out.println("  MINECRAFT_ASSISTANT_MODEL (default: gpt-5.6-luna)");
         out.println("  MINECRAFT_ASSISTANT_REASONING_EFFORT (default: medium)");
-        out.println("  " + WIKI_MCP_ENVIRONMENT + " (default: "
-                + McpToolSource.DEFAULT_MINECRAFT_WIKI_ENDPOINT + ")");
+        out.println("  " + WIKI_API_ENVIRONMENT + " (default: "
+                + MinecraftWikiToolSource.DEFAULT_API_URL + ")");
     }
 
     private static final class SmokeTool implements Tool {

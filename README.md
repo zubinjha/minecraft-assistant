@@ -8,7 +8,7 @@ The project currently supports:
 - structured tool calls with validation, limits, cancellation, and timeouts;
 - ChatGPT authentication through the official Codex app-server;
 - OpenRouter as the distributable mod's first production provider;
-- live Minecraft Wiki tools through MCP;
+- six live Minecraft Wiki tools through the official MediaWiki API, with no intermediary service;
 - a concise terminal interface for development;
 - a client-only Fabric 26.2 mod with `/ask`, conversation memory, cancellation, timing, clickable sources, and native production-method diagrams;
 - an in-game OpenRouter configuration screen; and
@@ -22,9 +22,9 @@ Solid lines are implemented today; dashed lines are planned integration points.
 flowchart LR
     CLI["Terminal chat<br/>./assistant"] --> API["Assistant API"]
     MC["Fabric 26.2 client<br/>/ask + config screen"] --> API
-    MC --> RECIPES["Native recipe presentations<br/>single cards, ordered steps,<br/>independent collections"]
-    RECIPES --> METHODS["Crafting, cooking,<br/>stonecutting, smithing"]
-    METHODS --> GAMEDATA["Minecraft recipe data<br/>+ item sprites"]
+    MC --> GUIDES["Native production presentations<br/>single cards, ordered steps,<br/>independent collections"]
+    GUIDES --> METHODS["Recipes, brewing, loom,<br/>cartography, enchanting,<br/>anvil, grindstone"]
+    METHODS --> GAMEDATA["Minecraft registries and rules<br/>+ active resource pack"]
 
     API --> MEMORY["20-message<br/>conversation memory"]
     API --> CODEX["Codex app-server adapter"]
@@ -36,8 +36,8 @@ flowchart LR
 
     CODEX --> TOOLS["Validated tool registry"]
     AGENT --> TOOLS
-    TOOLS --> MCP["Streamable HTTP<br/>MCP client"]
-    MCP --> WIKI["Minecraft Wiki"]
+    TOOLS --> MEDIAWIKI["In-process async<br/>MediaWiki client"]
+    MEDIAWIKI --> WIKI["minecraft.wiki/api.php"]
 ```
 
 Minecraft/Fabric code remains at the outer edge. Provider adapters, conversation logic, and Wiki tooling do not depend on Minecraft classes, allowing them to be tested independently and reused across Minecraft versions.
@@ -53,15 +53,15 @@ Once installed, join a local world and run:
 /ask how do I craft a recovery compass?
 ```
 
-The mod stores up to 20 recent user and assistant messages in memory for follow-up questions. `/ask clear` resets that context and `/ask stop` cancels the active request.
-Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Connected production questions such as “How do I go from sand to glass panes?” use one **Show N Steps** action with an ordered, navigable process; several unrelated recipe requests use **Show N Recipes**. Every card combines Minecraft's native recipe data with its actual workstation textures, slot positions, progress sprites, item renderer, and active resource pack. Cooking cards leave the fuel slot generic, while time and XP remain available from the progress-arrow tooltip instead of cluttering the card.
+The mod stores up to 20 recent user and assistant messages (10 complete exchanges) in memory for follow-up questions. The history resets when you leave the current world or server; `/ask clear` resets it manually, `/ask stop` cancels the active request, and `/ask help` explains every command.
+Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Brewing, loom, cartography, enchanting, anvil, and grindstone questions use workstation-specific actions such as **Show Brewing**. Connected production questions such as “How do I go from sand to glass panes?” use one **Show N Steps** action with an ordered, navigable process; several unrelated guides use **Show N Guides**. Cards use Minecraft's synchronized recipes, registries, production rules, workstation textures, slot positions, item renderer, and active resource pack. Dynamic systems stay conservative: enchanting offers are never promised, unknown anvil costs remain variable, and grindstones never claim to remove curses.
 
 ## Development prerequisites
 
 - Java 21 or newer for the standalone harness
 - Java 25 for Fabric 26.2 development
 - the Codex CLI, signed in with ChatGPT (`codex login`), for the terminal interface
-- internet access for the selected provider and the default Wiki MCP endpoint
+- internet access for the selected provider and Minecraft Wiki
 
 The checked-in Gradle wrapper downloads the pinned Gradle version. No system Gradle installation is needed.
 
@@ -113,25 +113,29 @@ Configuration is read from the environment:
 | --- | --- |
 | `MINECRAFT_ASSISTANT_MODEL` | `gpt-5.6-luna` |
 | `MINECRAFT_ASSISTANT_REASONING_EFFORT` | `medium` |
-| `MINECRAFT_ASSISTANT_WIKI_MCP_URL` | `https://minecraft-wiki-mcp.goett.top/mcp` |
+| `MINECRAFT_ASSISTANT_WIKI_API_URL` | `https://minecraft.wiki/api.php` |
 
-Only HTTPS MCP endpoints are accepted, except loopback HTTP endpoints for local development. The default Wiki endpoint is a third-party service; it receives Wiki tool names and arguments, not ChatGPT credentials. The Codex CLI owns ChatGPT authentication, and this project does not read or store its tokens.
+The Wiki client calls Minecraft Wiki's standard MediaWiki API directly. Only HTTPS API endpoints are accepted, except loopback HTTP endpoints used by local tests. There is no hosted Minecraft Assistant or third-party MCP intermediary. The Codex CLI owns ChatGPT authentication, and this project does not read or store its tokens.
 
 ## Security
 
 - Never commit provider keys, OAuth tokens, `.env` files, or Minecraft credentials.
 - The current ChatGPT development adapter delegates authentication to the Codex CLI and does not read its tokens.
 - The Fabric mod masks the OpenRouter key in its UI and stores it in a separate per-instance credentials file with owner-only permissions where the filesystem supports them.
-- Tool names and arguments may be sent to the configured MCP endpoint; provider credentials are not.
+- Question-derived Wiki search terms and page names may be sent directly to the configured MediaWiki API; provider credentials are not.
 - Model and tool output are treated as untrusted data and cannot register new tools or execute shell commands.
-- The default public Wiki MCP endpoint is third-party infrastructure and can be replaced through configuration.
+- Direct Wiki responses are session-cached for ten minutes; the cache and conversation history are not persisted.
+
+## Minecraft Wiki attribution
+
+Retrieved facts come from the community-run [Minecraft Wiki](https://minecraft.wiki/), whose content is available under [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). Wiki-backed answers retain a clickable canonical source link, and the direct tools also preserve page-history URLs for author attribution. Minecraft Wiki is not official Mojang or Microsoft documentation.
 
 ## Modules
 
 - `assistant-core` — provider-neutral messages, conversation memory, tools, agent loop, limits, and errors
 - `provider-codex` — isolated ChatGPT/Codex app-server adapter
 - `provider-openrouter` — direct OpenRouter HTTP adapter, tool-call mapping, and model discovery
-- `tool-mcp` — generic Streamable HTTP MCP client and tool mapping
+- `tool-mediawiki` — in-process async MediaWiki client and six Minecraft Wiki tools
 - `cli` — development and smoke-test entry point
 - `fabric` — Minecraft 26.2 client commands, settings UI, chat rendering, packaging, and client game tests
 

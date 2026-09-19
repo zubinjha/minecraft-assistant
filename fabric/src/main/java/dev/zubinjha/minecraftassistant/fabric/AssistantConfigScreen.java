@@ -98,7 +98,7 @@ public final class AssistantConfigScreen extends Screen {
                 apiKey.getValue(),
                 model.getValue(),
                 effort,
-                runtime.config().wikiEndpoint()
+                runtime.config().wikiApiUrl()
         );
     }
 

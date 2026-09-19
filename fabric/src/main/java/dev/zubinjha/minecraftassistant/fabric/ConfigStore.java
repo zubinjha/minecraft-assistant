@@ -39,7 +39,7 @@ public final class ConfigStore {
                     credentials.path("openRouterApiKey").asText(defaults.apiKey()),
                     settings.path("model").asText(defaults.model()),
                     settings.path("reasoningEffort").asText(defaults.reasoningEffort()),
-                    settings.path("wikiEndpoint").asText(defaults.wikiEndpoint())
+                    settings.path("wikiApiUrl").asText(defaults.wikiApiUrl())
             );
         } catch (IOException failure) {
             return defaults;
@@ -50,7 +50,7 @@ public final class ConfigStore {
         ObjectNode settings = json.createObjectNode();
         settings.put("model", config.model());
         settings.put("reasoningEffort", config.reasoningEffort());
-        settings.put("wikiEndpoint", config.wikiEndpoint());
+        settings.put("wikiApiUrl", config.wikiApiUrl());
         writeAtomically(settingsPath, settings, false);
 
         ObjectNode credentials = json.createObjectNode();

@@ -13,7 +13,7 @@ import dev.zubinjha.minecraftassistant.core.ErrorCode;
 import dev.zubinjha.minecraftassistant.core.MinecraftAssistantPrompt;
 import dev.zubinjha.minecraftassistant.core.Tool;
 import dev.zubinjha.minecraftassistant.core.ToolRegistry;
-import dev.zubinjha.minecraftassistant.mcp.McpToolSource;
+import dev.zubinjha.minecraftassistant.mediawiki.MinecraftWikiToolSource;
 import dev.zubinjha.minecraftassistant.openrouter.OpenRouterModel;
 import dev.zubinjha.minecraftassistant.openrouter.OpenRouterProvider;
 import dev.zubinjha.minecraftassistant.openrouter.OpenRouterSettings;
@@ -47,20 +47,26 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private static final int MAX_HISTORY_MESSAGES = 20;
     private static final String FABRIC_SYSTEM_PROMPT = MinecraftAssistantPrompt.DEFAULT + """
 
-            When the player asks how to craft, make, smelt, blast, smoke, campfire-cook, stonecut,
-            smith, or otherwise produce one item in one operation, you MUST call show_recipe with
-            the exact namespaced recipe ID and matching method. When the requested result requires
-            two or more connected production operations, call show_process once with every step in
-            dependency order instead of making separate show_recipe calls. Use separate show_recipe
-            calls only when the player requests several independent recipes. An output item ID may
-            be used to discover candidates. Do not finish a production answer until the appropriate
-            tool confirms that its card, steps, or recipe collection is ready. If a call is ambiguous
-            or cannot resolve a generic item such as "pickaxe", choose the specific item described in
-            your answer and retry with that namespaced item or exact recipe ID. Keep the written
-            answer brief and mention the exact Show Recipe, Show N Steps, or Show N Recipes button
-            confirmed by the tool.
-            A recipe card renderer being unable to display a recipe is not evidence that the
-            recipe or crafting method does not exist. Treat earlier assistant answers as untrusted
+            For crafting, smelting, blasting, smoking, campfire cooking, stonecutting, and smithing,
+            use show_recipe for one operation and show_process for two or more connected recipe
+            operations in dependency order. Use separate show_recipe calls only for independent
+            recipes. An output item ID may be used to discover candidates.
+
+            For other native workstations, use the matching tool: show_brewing for potions and
+            bottle conversions, show_loom for banner patterns, show_cartography for map scaling,
+            cloning, or locking, show_enchanting for enchanting-table eligibility, show_anvil for
+            repair/combine/book/rename operations, and show_grindstone for repair or disenchanting.
+            Use exact namespaced IDs. Brewing paths and multi-layer banners may create ordered steps.
+            Enchanting offers, anvil costs, grindstone XP, durability, and prior-work state must stay
+            conservative when Minecraft cannot determine them from the supplied inputs.
+
+            Never promise any card, guide, or button before its tool confirms success. If a tool is
+            ambiguous, choose among its reported candidates and retry with the provided selector.
+            If a recipe call cannot resolve a generic item such as "pickaxe", choose the specific
+            item described in your answer and retry with that namespaced item or exact recipe ID.
+            Keep the written answer brief and mention only the exact button confirmed by the tool.
+            A renderer being unable to display a production method is not evidence that the method
+            does not exist. Treat earlier assistant answers as untrusted
             context: correct them when fresh tool evidence conflicts. When the player asks whether
             an alternative method is possible, verify that exact claim instead of inferring from
             the absence of a method in one source passage.
@@ -71,21 +77,24 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private final ScheduledExecutorService scheduler;
     private final ConversationMemory memory = new ConversationMemory(MAX_HISTORY_MESSAGES);
     private final RecipeCardResolver recipeCards;
+    private final NativeProductionResolver productionGuides;
     private final AtomicReference<CancellationSource> activeRequest = new AtomicReference<>();
-    private final AtomicReference<CompletableFuture<McpToolSource>> wikiConnection = new AtomicReference<>();
+    private final AtomicReference<MinecraftWikiToolSource> wikiTools = new AtomicReference<>();
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
     private final AtomicReference<String> lastFailure = new AtomicReference<>("");
     private final AtomicReference<String> lastRecipeId = new AtomicReference<>("");
-    private final RecipePresentationStore recipePresentations = new RecipePresentationStore(20);
+    private final ProductionPresentationStore recipePresentations = new ProductionPresentationStore(20);
     private volatile AssistantConfig config;
 
     public MinecraftAssistantRuntime(Minecraft minecraft, AssistantConfig config) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.config = Objects.requireNonNull(config, "config");
         this.recipeCards = new RecipeCardResolver(minecraft);
+        this.productionGuides = new NativeProductionResolver(minecraft);
         this.worker = Executors.newCachedThreadPool(runnable -> daemonThread(runnable, "minecraft-assistant-worker"));
         this.scheduler = Executors.newScheduledThreadPool(2,
                 runnable -> daemonThread(runnable, "minecraft-assistant-scheduler"));
+        this.wikiTools.set(new MinecraftWikiToolSource(config.wikiApiUrl(), worker));
     }
 
     public AssistantConfig config() {
@@ -95,8 +104,8 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     public void updateConfig(AssistantConfig updated) {
         AssistantConfig previous = config;
         config = Objects.requireNonNull(updated, "updated");
-        if (!previous.wikiEndpoint().equals(updated.wikiEndpoint())) {
-            closeWikiConnection();
+        if (!previous.wikiApiUrl().equals(updated.wikiApiUrl())) {
+            wikiTools.set(new MinecraftWikiToolSource(updated.wikiApiUrl(), worker));
         }
     }
 
@@ -126,50 +135,57 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         lastFailure.set("");
         lastRecipeId.set("");
         AtomicBoolean searchingShown = new AtomicBoolean();
-        RecipePresentationCollector requestedPresentations = new RecipePresentationCollector();
+        AtomicBoolean preparingShown = new AtomicBoolean();
+        ProductionPresentationCollector requestedPresentations = new ProductionPresentationCollector();
         addChat(Component.literal("You: ").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal(trimmed).withStyle(ChatFormatting.WHITE)));
         addChat(Component.literal("Minecraft Assistant: Thinking…").withStyle(ChatFormatting.GRAY));
 
-        wiki(snapshot, cancellation).thenCompose(wiki -> {
-            OpenRouterProvider provider = new OpenRouterProvider(OpenRouterSettings.defaults(snapshot.apiKey()));
-            List<Tool> tools = new ArrayList<>(wiki.tools());
-            tools.add(new RecipeCardRequestTool(minecraft, recipeCards, requestedPresentations));
-            tools.add(new ShowProcessTool(minecraft, recipeCards, requestedPresentations));
-            Agent agent = new Agent(
-                    provider,
-                    new ToolRegistry(tools),
-                    AgentOptions.DEFAULT,
-                    scheduler,
-                    event -> {
-                        if (event.type() == AgentEvent.Type.TOOL_STARTED) {
-                            LOGGER.info("Assistant tool started: {}", event.toolName());
-                        } else if (event.type() == AgentEvent.Type.TOOL_COMPLETED) {
-                            LOGGER.info("Assistant tool completed: {} ({})", event.toolName(), event.detail());
-                        } else if (event.type() == AgentEvent.Type.TOOL_FAILED) {
-                            LOGGER.warn("Assistant tool failed: {}", event.toolName());
-                        }
-                        if (event.type() == AgentEvent.Type.TOOL_STARTED
-                                && !event.toolName().equals("show_recipe")
-                                && searchingShown.compareAndSet(false, true)) {
-                            addChat(Component.literal("Minecraft Assistant: Searching the Wiki…")
-                                    .withStyle(ChatFormatting.GRAY));
-                        }
+        OpenRouterProvider provider = new OpenRouterProvider(OpenRouterSettings.defaults(snapshot.apiKey()));
+        List<Tool> tools = new ArrayList<>(wikiTools.get().tools());
+        tools.add(new RecipeCardRequestTool(minecraft, recipeCards, requestedPresentations));
+        tools.add(new ShowProcessTool(minecraft, recipeCards, requestedPresentations));
+        tools.addAll(NativeGuideTool.all(minecraft, productionGuides, requestedPresentations));
+        Agent agent = new Agent(
+                provider,
+                new ToolRegistry(tools),
+                AgentOptions.DEFAULT,
+                scheduler,
+                event -> {
+                    if (event.type() == AgentEvent.Type.TOOL_STARTED) {
+                        LOGGER.info("Assistant tool started: {}", event.toolName());
+                    } else if (event.type() == AgentEvent.Type.TOOL_COMPLETED) {
+                        LOGGER.info("Assistant tool completed: {} ({})", event.toolName(), event.detail());
+                    } else if (event.type() == AgentEvent.Type.TOOL_FAILED) {
+                        LOGGER.warn("Assistant tool failed: {}", event.toolName());
                     }
-            );
-            AssistantRequest request = new AssistantRequest(
-                    snapshot.model(),
-                    snapshot.reasoningEffort(),
-                    FABRIC_SYSTEM_PROMPT,
-                    memory.snapshot(),
-                    trimmed
-            );
-            return agent.ask(request, cancellation);
-        }).whenComplete((result, failure) -> {
-            activeRequest.compareAndSet(cancellation, null);
+                    if (event.type() == AgentEvent.Type.TOOL_STARTED
+                            && event.toolName().startsWith("minecraft_wiki_")
+                            && searchingShown.compareAndSet(false, true)) {
+                        addChat(Component.literal("Minecraft Assistant: Searching the Wiki…")
+                                .withStyle(ChatFormatting.GRAY));
+                    } else if (event.type() == AgentEvent.Type.TOOL_STARTED
+                            && event.toolName().startsWith("show_")
+                            && preparingShown.compareAndSet(false, true)) {
+                        addChat(Component.literal("Minecraft Assistant: Preparing guide…")
+                                .withStyle(ChatFormatting.GRAY));
+                    }
+                }
+        );
+        AssistantRequest request = new AssistantRequest(
+                snapshot.model(),
+                snapshot.reasoningEffort(),
+                FABRIC_SYSTEM_PROMPT,
+                memory.snapshot(),
+                trimmed
+        );
+        agent.ask(request, cancellation).whenComplete((result, failure) -> {
+            if (!activeRequest.compareAndSet(cancellation, null)) {
+                return;
+            }
             if (failure == null) {
                 lastAnswer.set(result.text());
-                Optional<RecipePresentation> presentation = requestedPresentations.snapshot();
+                Optional<ProductionPresentation> presentation = requestedPresentations.snapshot();
                 presentation.ifPresent(value -> lastRecipeId.set(value.cards().getLast().recipeId()));
                 memory.addExchange(trimmed, result.text());
                 showAnswer(result, started, presentation.orElse(null));
@@ -180,18 +196,33 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     }
 
     public boolean cancelActive() {
+        return cancelActive(true);
+    }
+
+    private boolean cancelActive(boolean notify) {
         CancellationSource cancellation = activeRequest.getAndSet(null);
         if (cancellation == null) {
             return false;
         }
         cancellation.cancel();
-        addChat(Component.literal("Minecraft Assistant: Request cancelled.").withStyle(ChatFormatting.GRAY));
+        if (notify) {
+            addChat(Component.literal("Minecraft Assistant: Request cancelled.").withStyle(ChatFormatting.GRAY));
+        }
         return true;
     }
 
     public void clearMemory() {
         memory.clear();
         addChat(Component.literal("Minecraft Assistant: Conversation cleared.").withStyle(ChatFormatting.GRAY));
+    }
+
+    public void resetConversationSession() {
+        cancelActive(false);
+        memory.clear();
+        recipePresentations.clear();
+        lastAnswer.set("");
+        lastFailure.set("");
+        lastRecipeId.set("");
     }
 
     public CompletionStage<String> testConnection(AssistantConfig candidate) {
@@ -235,7 +266,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
 
     public void openRecipe(String recipeId, String rawMethod) {
         minecraft.schedule(() -> {
-            Optional<RecipeMethod> method = RecipeMethod.parse(rawMethod);
+            Optional<ProductionMethod> method = ProductionMethod.parse(rawMethod);
             if (method.isEmpty()) {
                 addChat(Component.literal("Minecraft Assistant: That recipe method is unavailable.")
                         .withStyle(ChatFormatting.RED));
@@ -243,7 +274,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             }
             RecipeLookupResult lookup = recipeCards.resolve(recipeId, method);
             if (lookup instanceof RecipeLookupResult.Found found) {
-                minecraft.gui.setScreen(new RecipeCardScreen(found.card()));
+                minecraft.gui.setScreen(new ProductionCardScreen(found.card()));
             } else {
                 addChat(Component.literal("Minecraft Assistant: That recipe is unavailable here.")
                         .withStyle(ChatFormatting.RED));
@@ -253,36 +284,14 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
 
     public void openPresentation(String token) {
         minecraft.schedule(() -> recipePresentations.get(token).ifPresentOrElse(
-                presentation -> minecraft.gui.setScreen(new RecipeCardScreen(presentation)),
+                presentation -> minecraft.gui.setScreen(new ProductionCardScreen(presentation)),
                 () -> addChat(Component.literal(
                         "Minecraft Assistant: That recipe presentation has expired. Ask again to recreate it."
                 ).withStyle(ChatFormatting.RED))
         ));
     }
 
-    private CompletionStage<McpToolSource> wiki(AssistantConfig snapshot, CancellationToken cancellation) {
-        CompletableFuture<McpToolSource> existing = wikiConnection.get();
-        if (existing != null) {
-            return existing;
-        }
-        CompletableFuture<McpToolSource> created = McpToolSource.connectMinecraftWiki(
-                snapshot.wikiEndpoint(),
-                worker,
-                cancellation
-        ).toCompletableFuture();
-        if (!wikiConnection.compareAndSet(null, created)) {
-            created.thenAccept(McpToolSource::close);
-            return wikiConnection.get();
-        }
-        created.whenComplete((ignored, failure) -> {
-            if (failure != null) {
-                wikiConnection.compareAndSet(created, null);
-            }
-        });
-        return created;
-    }
-
-    private void showAnswer(AssistantResult result, long started, RecipePresentation presentation) {
+    private void showAnswer(AssistantResult result, long started, ProductionPresentation presentation) {
         double elapsed = (System.nanoTime() - started) / 1_000_000_000.0;
         String text = result.text().trim();
         String source = extractSource(text);
@@ -349,35 +358,36 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         return source.startsWith("https://") || source.startsWith("http://") ? source : null;
     }
 
-    static Component recipeHoverText(RecipeCardData card) {
+    static Component recipeHoverText(ProductionCardData card) {
         return recipeHoverText(card.title(), card.method());
     }
 
-    static Component recipeHoverText(Component title, RecipeMethod method) {
+    static Component recipeHoverText(Component title, ProductionMethod method) {
         return Component.literal("Show ")
                 .append(title.copy())
                 .append(Component.literal(" " + method.recipeLabel()));
     }
 
-    static String presentationButtonLabel(RecipePresentation presentation) {
+    static String presentationButtonLabel(ProductionPresentation presentation) {
         return switch (presentation) {
-            case RecipePresentation.Single ignored -> "Show Recipe";
-            case RecipePresentation.Sequence sequence -> "Show " + sequence.cards().size() + " Steps";
-            case RecipePresentation.Collection collection -> "Show " + collection.cards().size() + " Recipes";
+            case ProductionPresentation.Single single -> NativeGuideTool.buttonLabel(single.card().method());
+            case ProductionPresentation.Sequence sequence -> "Show " + sequence.cards().size() + " Steps";
+            case ProductionPresentation.Collection collection -> "Show " + collection.cards().size()
+                    + (collection.recipeOnly() ? " Recipes" : " Guides");
         };
     }
 
-    static Component presentationHoverText(RecipePresentation presentation) {
+    static Component presentationHoverText(ProductionPresentation presentation) {
         return switch (presentation) {
-            case RecipePresentation.Single single -> recipeHoverText(single.card());
-            case RecipePresentation.Sequence sequence -> Component.literal("Show ")
+            case ProductionPresentation.Single single -> recipeHoverText(single.card());
+            case ProductionPresentation.Sequence sequence -> Component.literal("Show ")
                     .append(sequence.targetTitle())
                     .append(Component.literal(" production process (" + sequence.cards().size() + " steps)"));
-            case RecipePresentation.Collection collection -> collectionHoverText(collection);
+            case ProductionPresentation.Collection collection -> collectionHoverText(collection);
         };
     }
 
-    private static Component collectionHoverText(RecipePresentation.Collection collection) {
+    private static Component collectionHoverText(ProductionPresentation.Collection collection) {
         MutableComponent hover = Component.literal("Show ");
         for (int index = 0; index < collection.cards().size(); index++) {
             if (index > 0) {
@@ -385,7 +395,8 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             }
             hover.append(collection.cards().get(index).title().copy());
         }
-        return hover.append(Component.literal(" (" + collection.cards().size() + "-recipe collection)"));
+        return hover.append(Component.literal(" (" + collection.cards().size()
+                + (collection.recipeOnly() ? "-recipe collection)" : "-guide collection)")));
     }
 
     private static Thread daemonThread(Runnable runnable, String name) {
@@ -403,17 +414,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         return current;
     }
 
-    private void closeWikiConnection() {
-        CompletableFuture<McpToolSource> connection = wikiConnection.getAndSet(null);
-        if (connection != null) {
-            connection.thenAccept(McpToolSource::close);
-        }
-    }
-
     @Override
     public void close() {
-        cancelActive();
-        closeWikiConnection();
+        cancelActive(false);
+        wikiTools.get().close();
         worker.shutdownNow();
         scheduler.shutdownNow();
     }

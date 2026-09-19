@@ -37,7 +37,7 @@ final class RecipeCardResolver implements RecipeLookup {
     }
 
     @Override
-    public RecipeLookupResult resolve(String rawRecipeId, Optional<RecipeMethod> requestedMethod) {
+    public RecipeLookupResult resolve(String rawRecipeId, Optional<ProductionMethod> requestedMethod) {
         Identifier requested = Identifier.tryParse(rawRecipeId);
         if (requested == null) {
             return new RecipeLookupResult.Missing("recipe_id was not a valid namespaced identifier");
@@ -57,7 +57,7 @@ final class RecipeCardResolver implements RecipeLookup {
                     .getRecipeManager()
                     .byKey(key);
             if (exact.isPresent()) {
-                List<RecipeCardData> exactCards = fromRecipe(exact.get(), context);
+                List<ProductionCardData> exactCards = fromRecipe(exact.get(), context);
                 if (!exactCards.isEmpty()) {
                     RecipeLookupResult exactResult = select(exactCards, requestedMethod);
                     if (!(exactResult instanceof RecipeLookupResult.Missing)) {
@@ -66,7 +66,7 @@ final class RecipeCardResolver implements RecipeLookup {
                 }
             }
 
-            List<RecipeCardData> matches = new ArrayList<>();
+            List<ProductionCardData> matches = new ArrayList<>();
             for (RecipeHolder<?> holder : minecraft.getSingleplayerServer()
                     .getRecipeManager()
                     .getRecipes()) {
@@ -75,7 +75,7 @@ final class RecipeCardResolver implements RecipeLookup {
             return select(matches, requestedMethod);
         }
 
-        List<RecipeCardData> matches = new ArrayList<>();
+        List<ProductionCardData> matches = new ArrayList<>();
         if (minecraft.player != null) {
             for (var collection : minecraft.player.getRecipeBook().getCollections()) {
                 for (RecipeDisplayEntry entry : collection.getRecipes()) {
@@ -93,12 +93,12 @@ final class RecipeCardResolver implements RecipeLookup {
     private RecipeLookupResult resolveClientDisplay(
             int requestedIndex,
             ContextMap context,
-            Optional<RecipeMethod> requestedMethod
+            Optional<ProductionMethod> requestedMethod
     ) {
         if (minecraft.player == null) {
             return new RecipeLookupResult.Missing("client recipe displays are unavailable");
         }
-        List<RecipeCardData> matches = new ArrayList<>();
+        List<ProductionCardData> matches = new ArrayList<>();
         for (var collection : minecraft.player.getRecipeBook().getCollections()) {
             for (RecipeDisplayEntry entry : collection.getRecipes()) {
                 if (entry.id().index() == requestedIndex) {
@@ -110,21 +110,21 @@ final class RecipeCardResolver implements RecipeLookup {
         return select(matches, requestedMethod);
     }
 
-    private List<RecipeCardData> fromRecipe(RecipeHolder<?> holder, ContextMap context) {
+    private List<ProductionCardData> fromRecipe(RecipeHolder<?> holder, ContextMap context) {
         String recipeId = holder.id().identifier().toString();
         if (holder.value() instanceof MapExtendingRecipe) {
             return List.of(mapExtendingCard(recipeId));
         }
 
-        Optional<RecipeMethod> methodHint = methodFromType(holder.value().getType());
-        List<RecipeCardData> cards = new ArrayList<>();
+        Optional<ProductionMethod> methodHint = methodFromType(holder.value().getType());
+        List<ProductionCardData> cards = new ArrayList<>();
         for (RecipeDisplay display : holder.value().display()) {
             fromDisplay(recipeId, display, context, methodHint).ifPresent(cards::add);
         }
         return cards;
     }
 
-    private List<RecipeCardData> fromRecipeMatchingResult(
+    private List<ProductionCardData> fromRecipeMatchingResult(
             RecipeHolder<?> holder,
             Identifier requested,
             ContextMap context
@@ -135,8 +135,8 @@ final class RecipeCardResolver implements RecipeLookup {
                     ? List.of(mapExtendingCard(recipeId))
                     : List.of();
         }
-        Optional<RecipeMethod> methodHint = methodFromType(holder.value().getType());
-        List<RecipeCardData> cards = new ArrayList<>();
+        Optional<ProductionMethod> methodHint = methodFromType(holder.value().getType());
+        List<ProductionCardData> cards = new ArrayList<>();
         for (RecipeDisplay display : holder.value().display()) {
             if (displayResultMatches(display, requested, context)) {
                 fromDisplay(recipeId, display, context, methodHint).ifPresent(cards::add);
@@ -145,28 +145,28 @@ final class RecipeCardResolver implements RecipeLookup {
         return cards;
     }
 
-    private RecipeCardData mapExtendingCard(String recipeId) {
-        List<RecipeCardData.Slot> ingredients = new ArrayList<>(9);
+    private ProductionCardData mapExtendingCard(String recipeId) {
+        List<ProductionCardData.Slot> ingredients = new ArrayList<>(9);
         for (int slot = 0; slot < 9; slot++) {
-            ingredients.add(RecipeCardData.Slot.of(
+            ingredients.add(ProductionCardData.Slot.of(
                     new ItemStack(slot == 4 ? Items.FILLED_MAP : Items.PAPER)
             ));
         }
-        return new RecipeCardData.Crafting(
+        return new ProductionCardData.Crafting(
                 recipeId,
                 3,
                 3,
                 ingredients,
-                RecipeCardData.Slot.of(new ItemStack(Items.FILLED_MAP)),
+                ProductionCardData.Slot.of(new ItemStack(Items.FILLED_MAP)),
                 false
         );
     }
 
-    private Optional<RecipeCardData> fromDisplay(
+    private Optional<ProductionCardData> fromDisplay(
             String recipeId,
             RecipeDisplay display,
             ContextMap context,
-            Optional<RecipeMethod> methodHint
+            Optional<ProductionMethod> methodHint
     ) {
         if (display instanceof ShapedCraftingRecipeDisplay shaped) {
             return crafting(
@@ -192,11 +192,11 @@ final class RecipeCardResolver implements RecipeLookup {
             );
         }
         if (display instanceof FurnaceRecipeDisplay furnace) {
-            RecipeCardData.Slot station = slot(furnace.craftingStation(), context);
-            RecipeMethod method = methodHint
+            ProductionCardData.Slot station = slot(furnace.craftingStation(), context);
+            ProductionMethod method = methodHint
                     .filter(RecipeCardResolver::isCookingMethod)
                     .orElseGet(() -> methodFromStation(station));
-            return cardWithResult(new RecipeCardData.Cooking(
+            return cardWithResult(new ProductionCardData.Cooking(
                     recipeId,
                     method,
                     slot(furnace.ingredient(), context),
@@ -208,7 +208,7 @@ final class RecipeCardResolver implements RecipeLookup {
             ));
         }
         if (display instanceof StonecutterRecipeDisplay stonecutter) {
-            return cardWithResult(new RecipeCardData.Stonecutting(
+            return cardWithResult(new ProductionCardData.Stonecutting(
                     recipeId,
                     slot(stonecutter.input(), context),
                     slot(stonecutter.result(), context),
@@ -216,7 +216,7 @@ final class RecipeCardResolver implements RecipeLookup {
             ));
         }
         if (display instanceof SmithingRecipeDisplay smithing) {
-            return cardWithResult(new RecipeCardData.Smithing(
+            return cardWithResult(new ProductionCardData.Smithing(
                     recipeId,
                     slot(smithing.template(), context),
                     slot(smithing.base(), context),
@@ -228,7 +228,7 @@ final class RecipeCardResolver implements RecipeLookup {
         return Optional.empty();
     }
 
-    private Optional<RecipeCardData> crafting(
+    private Optional<ProductionCardData> crafting(
             String recipeId,
             int width,
             int height,
@@ -240,10 +240,10 @@ final class RecipeCardResolver implements RecipeLookup {
         if (width > 3 || height > 3) {
             return Optional.empty();
         }
-        List<RecipeCardData.Slot> ingredients = ingredientDisplays.stream()
+        List<ProductionCardData.Slot> ingredients = ingredientDisplays.stream()
                 .map(display -> slot(display, context))
                 .toList();
-        return cardWithResult(new RecipeCardData.Crafting(
+        return cardWithResult(new ProductionCardData.Crafting(
                 recipeId,
                 width,
                 height,
@@ -253,7 +253,7 @@ final class RecipeCardResolver implements RecipeLookup {
         ));
     }
 
-    private RecipeCardData.Slot slot(SlotDisplay display, ContextMap context) {
+    private ProductionCardData.Slot slot(SlotDisplay display, ContextMap context) {
         List<ItemStack> distinct = new ArrayList<>();
         for (ItemStack resolved : display.resolveForStacks(context)) {
             if (resolved.isEmpty()) {
@@ -265,21 +265,21 @@ final class RecipeCardResolver implements RecipeLookup {
                 distinct.add(resolved.copy());
             }
         }
-        return new RecipeCardData.Slot(distinct, display instanceof SlotDisplay.AnyFuel);
+        return new ProductionCardData.Slot(distinct, display instanceof SlotDisplay.AnyFuel);
     }
 
-    private static Optional<RecipeCardData> cardWithResult(RecipeCardData card) {
+    private static Optional<ProductionCardData> cardWithResult(ProductionCardData card) {
         return card.result().primary().isEmpty() ? Optional.empty() : Optional.of(card);
     }
 
     static RecipeLookupResult select(
-            List<RecipeCardData> cards,
-            Optional<RecipeMethod> requestedMethod
+            List<ProductionCardData> cards,
+            Optional<ProductionMethod> requestedMethod
     ) {
-        Map<String, RecipeCardData> unique = new LinkedHashMap<>();
+        Map<String, ProductionCardData> unique = new LinkedHashMap<>();
         cards.stream()
                 .filter(card -> requestedMethod.isEmpty() || card.method() == requestedMethod.get())
-                .sorted(Comparator.comparing(RecipeCardData::recipeId)
+                .sorted(Comparator.comparing(ProductionCardData::recipeId)
                         .thenComparing(card -> card.method().toolValue()))
                 .forEach(card -> unique.putIfAbsent(card.recipeId() + "|" + card.method(), card));
 
@@ -298,46 +298,46 @@ final class RecipeCardResolver implements RecipeLookup {
         return new RecipeLookupResult.Ambiguous(candidates);
     }
 
-    private static Optional<RecipeMethod> methodFromType(RecipeType<?> type) {
+    private static Optional<ProductionMethod> methodFromType(RecipeType<?> type) {
         if (type == RecipeType.CRAFTING) {
-            return Optional.of(RecipeMethod.CRAFTING);
+            return Optional.of(ProductionMethod.CRAFTING);
         }
         if (type == RecipeType.SMELTING) {
-            return Optional.of(RecipeMethod.SMELTING);
+            return Optional.of(ProductionMethod.SMELTING);
         }
         if (type == RecipeType.BLASTING) {
-            return Optional.of(RecipeMethod.BLASTING);
+            return Optional.of(ProductionMethod.BLASTING);
         }
         if (type == RecipeType.SMOKING) {
-            return Optional.of(RecipeMethod.SMOKING);
+            return Optional.of(ProductionMethod.SMOKING);
         }
         if (type == RecipeType.CAMPFIRE_COOKING) {
-            return Optional.of(RecipeMethod.CAMPFIRE_COOKING);
+            return Optional.of(ProductionMethod.CAMPFIRE_COOKING);
         }
         if (type == RecipeType.STONECUTTING) {
-            return Optional.of(RecipeMethod.STONECUTTING);
+            return Optional.of(ProductionMethod.STONECUTTING);
         }
         if (type == RecipeType.SMITHING) {
-            return Optional.of(RecipeMethod.SMITHING);
+            return Optional.of(ProductionMethod.SMITHING);
         }
         return Optional.empty();
     }
 
-    private static RecipeMethod methodFromStation(RecipeCardData.Slot station) {
+    private static ProductionMethod methodFromStation(ProductionCardData.Slot station) {
         Identifier stationId = BuiltInRegistries.ITEM.getKey(station.primary().getItem());
         return switch (stationId.getPath()) {
-            case "blast_furnace" -> RecipeMethod.BLASTING;
-            case "smoker" -> RecipeMethod.SMOKING;
-            case "campfire", "soul_campfire" -> RecipeMethod.CAMPFIRE_COOKING;
-            default -> RecipeMethod.SMELTING;
+            case "blast_furnace" -> ProductionMethod.BLASTING;
+            case "smoker" -> ProductionMethod.SMOKING;
+            case "campfire", "soul_campfire" -> ProductionMethod.CAMPFIRE_COOKING;
+            default -> ProductionMethod.SMELTING;
         };
     }
 
-    private static boolean isCookingMethod(RecipeMethod method) {
-        return method == RecipeMethod.SMELTING
-                || method == RecipeMethod.BLASTING
-                || method == RecipeMethod.SMOKING
-                || method == RecipeMethod.CAMPFIRE_COOKING;
+    private static boolean isCookingMethod(ProductionMethod method) {
+        return method == ProductionMethod.SMELTING
+                || method == ProductionMethod.BLASTING
+                || method == ProductionMethod.SMOKING
+                || method == ProductionMethod.CAMPFIRE_COOKING;
     }
 
     private static boolean displayResultMatches(

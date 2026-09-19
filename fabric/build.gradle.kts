@@ -26,27 +26,14 @@ dependencies {
 
     implementation(project(":assistant-core"))
     implementation(project(":provider-openrouter"))
-    implementation(project(":tool-mcp")) {
-        exclude(group = "org.slf4j", module = "slf4j-nop")
-    }
+    implementation(project(":tool-mediawiki"))
 
     include(project(":assistant-core"))
     include(project(":provider-openrouter"))
-    include(project(":tool-mcp"))
+    include(project(":tool-mediawiki"))
     include("com.fasterxml.jackson.core:jackson-annotations:2.22")
     include("com.fasterxml.jackson.core:jackson-core:2.22.2")
     include("com.fasterxml.jackson.core:jackson-databind:2.22.2")
-    include("io.modelcontextprotocol.sdk:mcp:2.0.1")
-    include("io.modelcontextprotocol.sdk:mcp-json-jackson3:2.0.1")
-    include("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
-    include("io.projectreactor:reactor-core:3.7.0")
-    include("org.reactivestreams:reactive-streams:1.0.4")
-    include("tools.jackson.core:jackson-core:3.1.4")
-    include("tools.jackson.core:jackson-databind:3.1.4")
-    include("tools.jackson.dataformat:jackson-dataformat-yaml:3.1.4")
-    include("org.snakeyaml:snakeyaml-engine:3.0.1")
-    include("com.networknt:json-schema-validator:3.0.6")
-    include("com.ethlo.time:itu:1.14.0")
 }
 
 val modVersion = version.toString()
