@@ -22,8 +22,9 @@ Solid lines are implemented today; dashed lines are planned integration points.
 flowchart LR
     CLI["Terminal chat<br/>./assistant"] --> API["Assistant API"]
     MC["Fabric 26.2 client<br/>/ask + config screen"] --> API
-    MC --> RECIPES["Native method cards<br/>crafting, cooking,<br/>stonecutting, smithing"]
-    RECIPES --> GAMEDATA["Minecraft recipe data<br/>+ item sprites"]
+    MC --> RECIPES["Native recipe presentations<br/>single cards, ordered steps,<br/>independent collections"]
+    RECIPES --> METHODS["Crafting, cooking,<br/>stonecutting, smithing"]
+    METHODS --> GAMEDATA["Minecraft recipe data<br/>+ item sprites"]
 
     API --> MEMORY["20-message<br/>conversation memory"]
     API --> CODEX["Codex app-server adapter"]
@@ -53,7 +54,7 @@ Once installed, join a local world and run:
 ```
 
 The mod stores up to 20 recent user and assistant messages in memory for follow-up questions. `/ask clear` resets that context and `/ask stop` cancels the active request.
-Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Its hover text identifies the item and method, and the resulting card is rendered from Minecraft's recipe data rather than model-generated ingredients. Item icons use Minecraft's normal renderer, including the active resource pack.
+Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Connected production questions such as “How do I go from sand to glass panes?” use one **Show N Steps** action with an ordered, navigable process; several unrelated recipe requests use **Show N Recipes**. Every card combines Minecraft's native recipe data with its actual workstation textures, slot positions, progress sprites, item renderer, and active resource pack. Cooking cards leave the fuel slot generic, while time and XP remain available from the progress-arrow tooltip instead of cluttering the card.
 
 ## Development prerequisites
 

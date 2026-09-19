@@ -12,7 +12,7 @@ This is an unreleased development build. GitHub Releases and Modrinth will becom
 4. Still on **Mods**, choose **Add File** and select the Minecraft Assistant JAR.
 5. Launch the instance and enter a local world.
 6. Run `/ask config`, enter an OpenRouter API key, keep the recommended model initially, and use **Test Connection**.
-7. Save, then try `/ask how do I craft a recovery compass?` or `/ask how do I smelt glass?` and click **Show Recipe**.
+7. Save, then try `/ask how do I craft a recovery compass?`, `/ask how do I smelt glass?`, or `/ask how do I go from sand to glass panes?`. Single operations use **Show Recipe**; connected production chains use one **Show N Steps** action.
 
 The development JAR is produced at:
 
