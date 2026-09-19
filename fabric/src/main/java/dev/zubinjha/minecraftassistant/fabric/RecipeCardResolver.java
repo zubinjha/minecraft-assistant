@@ -29,14 +29,15 @@ import net.minecraft.world.item.crafting.display.SmithingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.StonecutterRecipeDisplay;
 import net.minecraft.client.Minecraft;
 
-final class RecipeCardResolver {
+final class RecipeCardResolver implements RecipeLookup {
     private final Minecraft minecraft;
 
     RecipeCardResolver(Minecraft minecraft) {
         this.minecraft = minecraft;
     }
 
-    RecipeLookupResult resolve(String rawRecipeId, Optional<RecipeMethod> requestedMethod) {
+    @Override
+    public RecipeLookupResult resolve(String rawRecipeId, Optional<RecipeMethod> requestedMethod) {
         Identifier requested = Identifier.tryParse(rawRecipeId);
         if (requested == null) {
             return new RecipeLookupResult.Missing("recipe_id was not a valid namespaced identifier");

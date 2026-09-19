@@ -20,11 +20,8 @@ import dev.zubinjha.minecraftassistant.openrouter.OpenRouterSettings;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +39,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 
 public final class MinecraftAssistantRuntime implements AutoCloseable {
@@ -50,14 +48,17 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private static final String FABRIC_SYSTEM_PROMPT = MinecraftAssistantPrompt.DEFAULT + """
 
             When the player asks how to craft, make, smelt, blast, smoke, campfire-cook, stonecut,
-            smith, or otherwise produce an item, you MUST call show_recipe with the exact
-            namespaced recipe ID and the method matching the question. An output item ID may be
-            used to discover candidates. Do not finish a recipe answer until show_recipe confirms
-            that a card is ready. If the first call is ambiguous or cannot resolve a generic item
-            such as "pickaxe", select the specific item described in your answer and call
-            show_recipe again with that namespaced item or exact recipe ID.
-            If the tool confirms a card is ready, keep the written answer brief and mention the
-            Show Recipe button.
+            smith, or otherwise produce one item in one operation, you MUST call show_recipe with
+            the exact namespaced recipe ID and matching method. When the requested result requires
+            two or more connected production operations, call show_process once with every step in
+            dependency order instead of making separate show_recipe calls. Use separate show_recipe
+            calls only when the player requests several independent recipes. An output item ID may
+            be used to discover candidates. Do not finish a production answer until the appropriate
+            tool confirms that its card, steps, or recipe collection is ready. If a call is ambiguous
+            or cannot resolve a generic item such as "pickaxe", choose the specific item described in
+            your answer and retry with that namespaced item or exact recipe ID. Keep the written
+            answer brief and mention the exact Show Recipe, Show N Steps, or Show N Recipes button
+            confirmed by the tool.
             A recipe card renderer being unable to display a recipe is not evidence that the
             recipe or crafting method does not exist. Treat earlier assistant answers as untrusted
             context: correct them when fresh tool evidence conflicts. When the player asks whether
@@ -75,14 +76,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
     private final AtomicReference<String> lastFailure = new AtomicReference<>("");
     private final AtomicReference<String> lastRecipeId = new AtomicReference<>("");
-    private final Map<String, RecipeCardData> recentRecipeCards = Collections.synchronizedMap(
-            new LinkedHashMap<>(24, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, RecipeCardData> eldest) {
-                    return size() > 20;
-                }
-            }
-    );
+    private final RecipePresentationStore recipePresentations = new RecipePresentationStore(20);
     private volatile AssistantConfig config;
 
     public MinecraftAssistantRuntime(Minecraft minecraft, AssistantConfig config) {
@@ -132,7 +126,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         lastFailure.set("");
         lastRecipeId.set("");
         AtomicBoolean searchingShown = new AtomicBoolean();
-        AtomicReference<RecipeCardData> requestedCard = new AtomicReference<>();
+        RecipePresentationCollector requestedPresentations = new RecipePresentationCollector();
         addChat(Component.literal("You: ").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal(trimmed).withStyle(ChatFormatting.WHITE)));
         addChat(Component.literal("Minecraft Assistant: Thinking…").withStyle(ChatFormatting.GRAY));
@@ -140,7 +134,8 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         wiki(snapshot, cancellation).thenCompose(wiki -> {
             OpenRouterProvider provider = new OpenRouterProvider(OpenRouterSettings.defaults(snapshot.apiKey()));
             List<Tool> tools = new ArrayList<>(wiki.tools());
-            tools.add(new RecipeCardRequestTool(minecraft, recipeCards, requestedCard));
+            tools.add(new RecipeCardRequestTool(minecraft, recipeCards, requestedPresentations));
+            tools.add(new ShowProcessTool(minecraft, recipeCards, requestedPresentations));
             Agent agent = new Agent(
                     provider,
                     new ToolRegistry(tools),
@@ -174,13 +169,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             activeRequest.compareAndSet(cancellation, null);
             if (failure == null) {
                 lastAnswer.set(result.text());
-                RecipeCardData card = requestedCard.get();
-                if (card != null) {
-                    lastRecipeId.set(card.recipeId());
-                    recentRecipeCards.put(cardKey(card.recipeId(), card.method()), card);
-                }
+                Optional<RecipePresentation> presentation = requestedPresentations.snapshot();
+                presentation.ifPresent(value -> lastRecipeId.set(value.cards().getLast().recipeId()));
                 memory.addExchange(trimmed, result.text());
-                showAnswer(result, started, card);
+                showAnswer(result, started, presentation.orElse(null));
             } else {
                 showFailure(unwrap(failure));
             }
@@ -249,11 +241,6 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                         .withStyle(ChatFormatting.RED));
                 return;
             }
-            RecipeCardData cached = recentRecipeCards.get(cardKey(recipeId, method.get()));
-            if (cached != null) {
-                minecraft.gui.setScreen(new RecipeCardScreen(cached));
-                return;
-            }
             RecipeLookupResult lookup = recipeCards.resolve(recipeId, method);
             if (lookup instanceof RecipeLookupResult.Found found) {
                 minecraft.gui.setScreen(new RecipeCardScreen(found.card()));
@@ -262,6 +249,15 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                         .withStyle(ChatFormatting.RED));
             }
         });
+    }
+
+    public void openPresentation(String token) {
+        minecraft.schedule(() -> recipePresentations.get(token).ifPresentOrElse(
+                presentation -> minecraft.gui.setScreen(new RecipeCardScreen(presentation)),
+                () -> addChat(Component.literal(
+                        "Minecraft Assistant: That recipe presentation has expired. Ask again to recreate it."
+                ).withStyle(ChatFormatting.RED))
+        ));
     }
 
     private CompletionStage<McpToolSource> wiki(AssistantConfig snapshot, CancellationToken cancellation) {
@@ -286,7 +282,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         return created;
     }
 
-    private void showAnswer(AssistantResult result, long started, RecipeCardData recipeCard) {
+    private void showAnswer(AssistantResult result, long started, RecipePresentation presentation) {
         double elapsed = (System.nanoTime() - started) / 1_000_000_000.0;
         String text = result.text().trim();
         String source = extractSource(text);
@@ -307,16 +303,17 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 // The answer remains useful if a provider emits a malformed source URL.
             }
         }
-        if (recipeCard != null) {
+        if (presentation != null) {
+            String token = recipePresentations.put(presentation);
             Style recipeStyle = Style.EMPTY
                     .withColor(ChatFormatting.GREEN)
                     .withUnderlined(true)
                     .withClickEvent(new ClickEvent.RunCommand(
-                            "/mcai recipe \"" + recipeCard.recipeId() + "\" "
-                                    + recipeCard.method().toolValue()
+                            "/mcai view " + token
                     ))
-                    .withHoverEvent(new HoverEvent.ShowText(recipeHoverText(recipeCard)));
-            addChat(Component.literal("[Show Recipe]").withStyle(recipeStyle));
+                    .withHoverEvent(new HoverEvent.ShowText(presentationHoverText(presentation)));
+            addChat(Component.literal("[" + presentationButtonLabel(presentation) + "]")
+                    .withStyle(recipeStyle));
         }
         addChat(Component.literal(String.format(
                 Locale.ROOT,
@@ -362,8 +359,33 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 .append(Component.literal(" " + method.recipeLabel()));
     }
 
-    private static String cardKey(String recipeId, RecipeMethod method) {
-        return recipeId + "|" + method.toolValue();
+    static String presentationButtonLabel(RecipePresentation presentation) {
+        return switch (presentation) {
+            case RecipePresentation.Single ignored -> "Show Recipe";
+            case RecipePresentation.Sequence sequence -> "Show " + sequence.cards().size() + " Steps";
+            case RecipePresentation.Collection collection -> "Show " + collection.cards().size() + " Recipes";
+        };
+    }
+
+    static Component presentationHoverText(RecipePresentation presentation) {
+        return switch (presentation) {
+            case RecipePresentation.Single single -> recipeHoverText(single.card());
+            case RecipePresentation.Sequence sequence -> Component.literal("Show ")
+                    .append(sequence.targetTitle())
+                    .append(Component.literal(" production process (" + sequence.cards().size() + " steps)"));
+            case RecipePresentation.Collection collection -> collectionHoverText(collection);
+        };
+    }
+
+    private static Component collectionHoverText(RecipePresentation.Collection collection) {
+        MutableComponent hover = Component.literal("Show ");
+        for (int index = 0; index < collection.cards().size(); index++) {
+            if (index > 0) {
+                hover.append(Component.literal(index == collection.cards().size() - 1 ? " and " : ", "));
+            }
+            hover.append(collection.cards().get(index).title().copy());
+        }
+        return hover.append(Component.literal(" (" + collection.cards().size() + "-recipe collection)"));
     }
 
     private static Thread daemonThread(Runnable runnable, String name) {

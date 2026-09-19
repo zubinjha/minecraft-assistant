@@ -79,6 +79,11 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
     private void registerMcaiFallback(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         dispatcher.register(literal("mcai")
                 .then(command("ask"))
+                .then(literal("view")
+                        .then(argument("token", word()).executes(context -> {
+                            runtime.openPresentation(getString(context, "token"));
+                            return 1;
+                        })))
                 .then(literal("recipe")
                         .then(argument("recipe_id", string())
                                 .then(argument("method", word()).executes(context -> {

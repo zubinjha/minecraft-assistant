@@ -9,7 +9,7 @@ import dev.zubinjha.minecraftassistant.core.ToolDefinition;
 import dev.zubinjha.minecraftassistant.core.ToolExecutionResult;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executor;
 import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -21,18 +21,26 @@ final class RecipeCardRequestTool implements Tool {
             schema()
     );
 
-    private final Minecraft minecraft;
-    private final RecipeCardResolver resolver;
-    private final AtomicReference<RecipeCardData> requestedCard;
+    private final Executor clientExecutor;
+    private final RecipeLookup resolver;
+    private final RecipePresentationCollector presentations;
 
     RecipeCardRequestTool(
             Minecraft minecraft,
-            RecipeCardResolver resolver,
-            AtomicReference<RecipeCardData> requestedCard
+            RecipeLookup resolver,
+            RecipePresentationCollector presentations
     ) {
-        this.minecraft = minecraft;
+        this(minecraft::execute, resolver, presentations);
+    }
+
+    RecipeCardRequestTool(
+            Executor clientExecutor,
+            RecipeLookup resolver,
+            RecipePresentationCollector presentations
+    ) {
+        this.clientExecutor = clientExecutor;
         this.resolver = resolver;
-        this.requestedCard = requestedCard;
+        this.presentations = presentations;
     }
 
     @Override
@@ -62,14 +70,14 @@ final class RecipeCardRequestTool implements Tool {
         }
 
         CompletableFuture<ToolExecutionResult> result = new CompletableFuture<>();
-        minecraft.execute(() -> {
+        clientExecutor.execute(() -> {
             try {
                 cancellation.throwIfCancelled();
                 RecipeLookupResult lookup = resolver.resolve(parsed.toString(), method);
                 switch (lookup) {
                     case RecipeLookupResult.Found found -> {
                         RecipeCardData card = found.card();
-                        requestedCard.set(card);
+                        presentations.add(card);
                         result.complete(ToolExecutionResult.text(
                                 "A native " + card.method().recipeLabel() + " card is ready for "
                                         + card.recipeId() + ". Ingredients: " + card.ingredientSummary()
