@@ -41,6 +41,10 @@ final class ChooseProductionRoutesTool implements Tool {
         return DEFINITION;
     }
 
+    static ToolDefinition benchmarkDefinition() {
+        return DEFINITION;
+    }
+
     @Override
     public CompletionStage<ToolExecutionResult> execute(JsonNode arguments, CancellationToken cancellation) {
         cancellation.throwIfCancelled();

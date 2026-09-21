@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.JavaExec
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 plugins {
@@ -67,4 +68,13 @@ java {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release.set(25)
+}
+
+tasks.register<JavaExec>("runModelBenchmark") {
+    group = "verification"
+    description = "Runs or reports the fixture-backed OpenRouter model benchmark"
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.zubinjha.minecraftassistant.fabric.ModelBenchmarkMain")
+    workingDir = rootProject.projectDir
 }

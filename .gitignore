@@ -22,6 +22,9 @@ temp/
 # Local project notes
 notes/
 
+# Local model benchmark transcripts and reviews
+benchmark-results/
+
 # Common dependency and build output
 node_modules/
 dist/

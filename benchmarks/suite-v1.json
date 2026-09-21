@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "name": "Minecraft Assistant 20-question benchmark",
+  "models": [
+    {"id": "openai/gpt-5.6-luna", "reasoning_effort": "low"},
+    {"id": "openai/gpt-5.6-luna", "reasoning_effort": "high"},
+    {"id": "openai/gpt-5.6-sol", "reasoning_effort": "low"},
+    {"id": "openai/gpt-5.6-sol", "reasoning_effort": "high"},
+    {"id": "anthropic/claude-opus-5", "reasoning_effort": "low"},
+    {"id": "anthropic/claude-opus-5", "reasoning_effort": "high"},
+    {"id": "anthropic/claude-haiku-4.5", "reasoning_effort": "low"},
+    {"id": "anthropic/claude-haiku-4.5", "reasoning_effort": "high"},
+    {"id": "openai/gpt-5-mini", "reasoning_effort": "low"},
+    {"id": "openai/gpt-5-nano", "reasoning_effort": "low"},
+    {"id": "google/gemini-3.8-flash", "reasoning_effort": "low"},
+    {"id": "deepseek/deepseek-v4.1-flash", "reasoning_effort": "low"},
+    {"id": "inception/mercury-2.5", "reasoning_effort": "low"}
+  ],
+  "cases": [
+    {
+      "id": "wiki-mending", "category": "wiki",
+      "question": "What does Mending do, and which item gets repaired when I collect XP?",
+      "fixture": "mending", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Explain durability repair from XP, eligible held/worn items, and random selection without inventing behavior."
+    },
+    {
+      "id": "wiki-nether-ratio", "category": "wiki",
+      "question": "What is the coordinate ratio between the Overworld and the Nether?",
+      "fixture": "nether-ratio", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "State that one horizontal Nether block equals eight Overworld blocks and Y is not scaled."
+    },
+    {
+      "id": "wiki-heart-of-the-sea", "category": "wiki",
+      "question": "How do I get a Heart of the Sea?",
+      "fixture": "heart-of-the-sea", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Identify buried treasure chests and do not invent crafting or unrelated drops."
+    },
+    {
+      "id": "wiki-looting-blaze", "category": "wiki",
+      "question": "Does Looting increase the number of blaze rods a blaze can drop?",
+      "fixture": "blaze", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Answer yes, player kill required, with the maximum increasing by one per Looting level."
+    },
+    {
+      "id": "wiki-map-crafting", "category": "wiki",
+      "question": "Can I zoom out a map using a crafting table in Java Edition?",
+      "fixture": "map", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Answer yes: surround the map with eight paper; cartography is a cheaper alternative."
+    },
+    {
+      "id": "wiki-nether-bed", "category": "wiki",
+      "question": "What happens if I try to sleep in a bed in the Nether?",
+      "fixture": "bed", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Warn that the bed explodes when used and can cause damage/fire."
+    },
+    {
+      "id": "recipe-recovery-compass", "category": "production",
+      "question": "How do I make a recovery compass?",
+      "fixture": "recipe", "expected_tools": ["prepare_production"],
+      "criteria": "Request a native recovery-compass guide and briefly identify compass plus eight echo shards."
+    },
+    {
+      "id": "recipe-glass", "category": "production",
+      "question": "Show me how to smelt sand into glass.",
+      "fixture": "recipe", "expected_tools": ["prepare_production"],
+      "criteria": "Request one glass production guide from sand using a furnace-compatible method."
+    },
+    {
+      "id": "guide-slowness", "category": "native-guide",
+      "question": "Show me how to brew a Potion of Slowness.",
+      "fixture": "native-guide", "expected_tools": ["show_brewing"],
+      "criteria": "Use show_brewing with the slowness potion ID and promise a guide only after confirmation."
+    },
+    {
+      "id": "guide-map-lock", "category": "native-guide",
+      "question": "Show me how to lock a map.",
+      "fixture": "native-guide", "expected_tools": ["show_cartography"],
+      "criteria": "Use show_cartography with the lock operation."
+    },
+    {
+      "id": "guide-anvil-sharpness", "category": "native-guide",
+      "question": "Can I apply a Sharpness V enchanted book to a diamond sword with an anvil? Show me.",
+      "fixture": "native-guide", "expected_tools": ["show_anvil"],
+      "criteria": "Use show_anvil apply_book with the sword and Sharpness V while keeping exact cost conservative."
+    },
+    {
+      "id": "production-torches", "category": "production",
+      "question": "I have oak logs and a furnace but no coal. Show me how to make torches.",
+      "fixture": "process", "expected_tools": ["prepare_production"],
+      "criteria": "Target torches, start from oak logs, mark coal unavailable, and use one recursive guide call."
+    },
+    {
+      "id": "quantity-stairs", "category": "quantity",
+      "question": "How many oak logs do I need for 128 oak stairs?",
+      "fixture": "quantity-stairs", "expected_tools": ["prepare_production"],
+      "criteria": "Target 128 oak stairs from oak logs; deterministic result is 48 logs."
+    },
+    {
+      "id": "comparison-slabs", "category": "comparison",
+      "question": "Compare crafting and stonecutting routes from cobblestone for five stacks of stone brick slabs.",
+      "fixture": "comparison-slabs", "expected_tools": ["prepare_production", "choose_production_routes"],
+      "criteria": "Request 320 slabs from cobblestone and choose both crafting and stonecutting candidates."
+    },
+    {
+      "id": "production-iron-sword", "category": "production",
+      "question": "I have raw iron and oak logs. Show me how to make an iron sword.",
+      "fixture": "process", "expected_tools": ["prepare_production"],
+      "criteria": "Target an iron sword with raw iron and oak logs as starting materials in one recursive guide."
+    },
+    {
+      "id": "quantity-glass-panes", "category": "quantity",
+      "question": "How do I turn sand into exactly 16 glass panes?",
+      "fixture": "quantity-panes", "expected_tools": ["prepare_production"],
+      "criteria": "Target 16 glass panes from sand; deterministic result is six sand through smelting and crafting."
+    },
+    {
+      "id": "followup-no-stonecutter", "category": "follow-up",
+      "question": "I don't have a stonecutter. What can I do instead?",
+      "fixture": "quantity-slabs-crafting", "expected_tools": ["prepare_production"],
+      "criteria": "Reuse five stacks, stone-brick slabs, and cobblestone; mark stonecutting unavailable.",
+      "history": [
+        {"role": "user", "text": "How much cobblestone do I need for five stacks of stone brick slabs?"},
+        {"role": "assistant", "text": "The stonecutter route needs 160 cobblestone for 320 slabs."}
+      ]
+    },
+    {
+      "id": "followup-show-torches", "category": "follow-up",
+      "question": "Can you show me the crafting recipes?",
+      "fixture": "process", "expected_tools": ["prepare_production"],
+      "criteria": "Reuse the torch target, logs, furnace, and unavailable coal in one recursive guide call.",
+      "history": [
+        {"role": "user", "text": "I have a furnace but no coal and a stack of oak logs. Can I make torches?"},
+        {"role": "assistant", "text": "Yes. Smelt a log into charcoal, craft sticks from planks, then combine charcoal and a stick."}
+      ]
+    },
+    {
+      "id": "followup-map-crafting", "category": "follow-up",
+      "question": "But can I do it with a crafting table instead?",
+      "fixture": "map", "expected_tools": ["minecraft_wiki_search", "minecraft_wiki_get_page"],
+      "criteria": "Reuse map zooming context and correctly say the Java crafting-table recipe uses a map plus eight paper.",
+      "history": [
+        {"role": "user", "text": "How do I zoom out a map?"},
+        {"role": "assistant", "text": "A cartography table can zoom a map using one sheet of paper."}
+      ]
+    },
+    {
+      "id": "strategy-ender-dragon", "category": "strategy",
+      "question": "I have iron armor, a bow, and food. What else should I bring to fight the Ender Dragon?",
+      "fixture": "strategy", "expected_tools": [],
+      "criteria": "Give concise useful preparation advice and do not create an irrelevant production guide."
+    }
+  ]
+}

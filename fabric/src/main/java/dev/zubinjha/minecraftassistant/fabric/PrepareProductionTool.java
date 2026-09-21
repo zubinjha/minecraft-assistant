@@ -71,6 +71,10 @@ final class PrepareProductionTool implements Tool {
         return DEFINITION;
     }
 
+    static ToolDefinition benchmarkDefinition() {
+        return DEFINITION;
+    }
+
     @Override
     public CompletionStage<ToolExecutionResult> execute(JsonNode arguments, CancellationToken cancellation) {
         String targetItemId = normalizeId(arguments.path("target_item_id").asText(""));

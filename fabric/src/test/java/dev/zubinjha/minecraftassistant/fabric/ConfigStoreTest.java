@@ -12,6 +12,12 @@ final class ConfigStoreTest {
     Path directory;
 
     @Test
+    void newInstallUsesTheBenchmarkedDefaultModel() {
+        assertEquals("openai/gpt-5.6-luna", AssistantConfig.defaults().model());
+        assertEquals("low", AssistantConfig.defaults().reasoningEffort());
+    }
+
+    @Test
     void savesAndLoadsSettingsAndCredentials() throws Exception {
         ConfigStore store = new ConfigStore(directory);
         AssistantConfig expected = new AssistantConfig(

@@ -12,7 +12,7 @@ Build a client-side Fabric mod that lets a player ask Minecraft questions with:
 /ask <natural-language question>
 ```
 
-The assistant must answer concisely inside Minecraft and use live Minecraft Wiki retrieval when factual grounding is useful. The reusable AI system will be developed and tested as a standalone Java application before any Minecraft integration is added.
+The assistant must answer concisely inside Minecraft and use live Minecraft Wiki retrieval when factual grounding is useful. The reusable AI system is kept independent of Minecraft where practical and tested through automated Java tests.
 
 The project should begin as a small, reliable tool-calling harness rather than a general-purpose agent framework.
 
@@ -22,16 +22,13 @@ Implementation order is intentionally decoupled from Minecraft:
 
 1. Build and test the standalone agent core.
 2. Add one real LLM provider, starting with OpenRouter.
-3. Connect Minecraft Wiki tools directly through MediaWiki and validate grounded answers from the CLI.
+3. Connect Minecraft Wiki tools directly through MediaWiki and validate grounded answers with isolated integration tests.
 4. Add Ollama and OpenAI API-key providers behind the same abstraction.
 5. Integrate the proven core into a client-only Fabric mod.
 6. Add in-game configuration and credential handling.
 7. Investigate richer responses, game-state tools, and supported ChatGPT subscription authentication after the initial product works.
 
-This produces two meaningful milestones:
-
-- Standalone milestone: a CLI question can drive an LLM tool loop and return a Wiki-grounded answer.
-- Product milestone: the same behavior is available through `/ask` in Minecraft without a project-specific companion process.
+The product milestone is a complete `/ask` flow in Minecraft without a project-specific companion process.
 
 ## 3. Goals
 
@@ -93,14 +90,13 @@ The Fabric research snapshot currently documents Minecraft 26.2-era development 
 
 - Network and tool operations must expose asynchronous APIs.
 - No provider, OAuth, discovery, or Wiki call may run on Minecraft's render thread.
-- The CLI may block only at its outermost command boundary while awaiting an asynchronous operation.
 - Minecraft UI updates must be scheduled back onto the Minecraft client thread.
 
 ### 5.4 Conversation scope
 
 - Retain the most recent 20 user and final-assistant messages in memory for follow-up questions.
 - Do not persist conversation history to disk in the initial product.
-- `/ask clear` clears conversation memory, and the terminal prototype's `/clear` does the same.
+- `/ask clear` clears conversation memory.
 - The internal tool-call loop retains all messages needed to complete that invocation.
 - Retain final user/assistant exchanges between questions, not raw tool output or hidden reasoning.
 
@@ -118,9 +114,7 @@ The Fabric research snapshot currently documents Minecraft 26.2-era development 
 ├── provider-openrouter/
 ├── provider-ollama/
 ├── provider-openai/
-├── provider-codex/
 ├── tool-mediawiki/
-├── cli/
 ├── fabric/
 ├── build.gradle.kts
 ├── settings.gradle.kts
@@ -135,9 +129,7 @@ Module responsibilities:
 | `provider-openrouter` | OpenRouter HTTP mapping, authentication, model discovery, and response normalization |
 | `provider-ollama` | Ollama reachability, model discovery, capability checks, chat mapping, and response normalization |
 | `provider-openai` | OpenAI API-key integration using the Responses API |
-| `provider-codex` | Development-only ChatGPT integration through the official Codex app-server |
 | `tool-mediawiki` | Direct async MediaWiki client, caching, limits, and six Minecraft Wiki tools |
-| `cli` | Standalone configuration and end-to-end development/test surface |
 | `fabric` | Client commands, Minecraft-thread coordination, chat rendering, and configuration UI |
 
 Dependencies must point inward:
@@ -145,7 +137,6 @@ Dependencies must point inward:
 ```text
 provider-* ──> assistant-core
 tool-mediawiki ─> assistant-core
-cli ─────────> assistant-core + provider-* + tool-mediawiki
 fabric ──────> assistant-core + provider-* + tool-mediawiki
 ```
 
@@ -242,7 +233,7 @@ The harness should emit coarse events without exposing model reasoning:
 - request cancelled;
 - request failed.
 
-The CLI can render these as logs or progress messages. The Fabric layer can turn them into `Thinking…` or `Searching Minecraft Wiki…` status text.
+The Fabric layer turns these into `Thinking…`, `Searching the Wiki…`, and other concise status text.
 
 ## 8. Agent Loop
 
@@ -341,9 +332,7 @@ The implementation phase must re-check the official OpenAI documentation before 
 
 ### 10.4 ChatGPT subscription authentication
 
-Official Codex app-server documentation currently describes managed ChatGPT browser and device-code authentication for Codex clients. That does not by itself establish a supported general-purpose ChatGPT OAuth flow for an unrelated Minecraft assistant, and app-server would introduce an external Codex process.
-
-For development before the Fabric layer, an isolated `provider-codex` adapter may use the official Codex app-server to exercise a real ChatGPT-authenticated model and client-owned dynamic tools. This is a test/development integration, not yet the distributable mod's production authentication design. It must remain replaceable without changing the core harness.
+Current official OpenAI documentation does not establish a supported general-purpose ChatGPT subscription OAuth flow for an unrelated Minecraft mod.
 
 Therefore:
 
@@ -357,7 +346,7 @@ Therefore:
 
 ### 11.1 Integration
 
-The mod and CLI call the official Minecraft Wiki MediaWiki endpoint directly:
+The mod calls the official Minecraft Wiki MediaWiki endpoint directly:
 
 ```text
 https://minecraft.wiki/api.php
@@ -426,7 +415,6 @@ Unknown fields should be ignored when safe so configuration can evolve. Invalid 
 ### 12.2 Secret handling
 
 - Never put credentials in source control, normal logs, crash messages, chat, or Minecraft packets.
-- The CLI initially accepts provider keys through environment variables or ephemeral prompts.
 - Normal configuration stores credential references, not raw secret values.
 - The Fabric credential persistence mechanism is a release-blocking decision for the configuration phase.
 - Prefer an operating-system credential store if a small, maintained, cross-platform option is practical.
@@ -462,39 +450,9 @@ Every top-level request receives a random request ID for correlation. Default lo
 
 No telemetry is collected in the MVP.
 
-## 14. Standalone CLI
+## 14. Testing Strategy
 
-The CLI is the primary development and test surface before Fabric exists.
-
-Minimum commands:
-
-```text
-assistant ask "how do I get a heart of the sea?"
-assistant providers
-assistant models
-assistant doctor
-```
-
-`doctor` reports configuration presence, provider reachability, selected-model availability, direct MediaWiki reachability, and available Wiki tools without printing secrets.
-
-Example development flow:
-
-```text
-$ assistant ask "how do I make a recovery compass?"
-Searching Minecraft Wiki…
-
-A recovery compass is crafted from one regular compass surrounded by
-eight echo shards. It points to your last death location in the same
-dimension; otherwise it spins randomly.
-
-Source: Minecraft Wiki — Recovery Compass
-```
-
-Exact answer wording is not a fixture. Tests validate structure, tool behavior, grounding, and source presence.
-
-## 15. Testing Strategy
-
-### 15.1 Core unit tests
+### 14.1 Core unit tests
 
 Use deterministic fake providers and tools to cover:
 
@@ -514,7 +472,7 @@ Use deterministic fake providers and tools to cover:
 
 Tests must not need internet access or API keys.
 
-### 15.2 Provider contract tests
+### 14.2 Provider contract tests
 
 Each adapter runs the same reusable contract suite against recorded or local HTTP fixtures:
 
@@ -529,14 +487,14 @@ Each adapter runs the same reusable contract suite against recorded or local HTT
 
 Optional live tests are opt-in, excluded from normal CI, and require explicitly named environment variables.
 
-### 15.3 MediaWiki tests
+### 14.3 MediaWiki tests
 
 - Test all six tools, redirects, sections, canonical URLs, escaping, caching, truncation, cancellation, timeouts, bounded retries, malformed responses, and outages against a local fixture server.
 - Maintain an opt-in live smoke test for the configured Minecraft Wiki API endpoint.
 - Treat live endpoint failures as diagnostic signals, not deterministic CI failures.
 - Test response-size limits and malicious instruction-like text in tool results.
 
-### 15.4 Grounding evaluation set
+### 14.4 Grounding evaluation set
 
 Maintain a small, reviewable evaluation set with questions such as:
 
@@ -558,7 +516,7 @@ Evaluate whether the run:
 
 The evaluation runner should record outcomes for human review without making brittle exact-text assertions.
 
-### 15.5 Fabric tests
+### 14.5 Fabric tests
 
 After the core is stable, test:
 
@@ -573,15 +531,15 @@ After the core is stable, test:
 - configuration migration;
 - missing provider, invalid key, offline Wiki, and unavailable Ollama behavior.
 
-## 16. Fabric Integration
+## 15. Fabric Integration
 
-### 16.1 Version selection
+### 15.1 Version selection
 
 Select the first target Minecraft version immediately before beginning this module. Use the then-current stable Fabric documentation and template, and record exact versions in the build.
 
 Minecraft-dependent code must remain in `fabric`. Shared modules must not import Minecraft or Fabric classes.
 
-### 16.2 Commands
+### 15.2 Commands
 
 Use Fabric's client command API (`ClientCommandRegistrationCallback` and `ClientCommands`) so `/ask` is handled locally.
 
@@ -595,7 +553,7 @@ Initial commands:
 
 The preferred user command is `/ask`. Because client/server command collisions can vary with server command trees and Fabric behavior, test collisions before release and retain `/mcai ask` as a stable fallback if necessary.
 
-### 16.3 Request lifecycle
+### 15.3 Request lifecycle
 
 1. Parse and validate the question on the client thread.
 2. Reject an empty question with local usage help.
@@ -607,7 +565,7 @@ The preferred user command is `/ask`. Because client/server command collisions c
 
 The initial mod allows one active request per client. `/ask stop` cancels it. A second request while one is active receives a local message instead of silently replacing the first.
 
-### 16.4 Chat presentation
+### 15.4 Chat presentation
 
 - Prefer concise plain text with Minecraft-native styling.
 - Split long responses at sensible boundaries.
@@ -616,7 +574,7 @@ The initial mod allows one active request per client. `/ask stop` cancels it. A 
 - Keep status messages visually distinct from final answers.
 - Do not expose model reasoning or hidden chain-of-thought.
 
-### 16.5 Configuration UI
+### 15.5 Configuration UI
 
 Start with a vanilla Minecraft screen to minimize dependencies. Add optional Mod Menu integration only if it materially improves discovery.
 
@@ -629,7 +587,7 @@ Fields vary by provider:
 
 The UI must mask secrets, never echo them into logs, and explain which services receive network traffic.
 
-## 17. Security Model
+## 16. Security Model
 
 Tool results and model output are untrusted input.
 
@@ -645,32 +603,20 @@ Tool results and model output are untrusted input.
 
 Threat-focused tests should include prompt injection inside Wiki content, redirect abuse, credential leakage through logs/errors, oversized responses, repeated tool-call loops, and cancellation races.
 
-## 18. Implementation Phases and Exit Criteria
+## 17. Implementation Phases and Exit Criteria
 
-### Phase 1 — Core and CLI skeleton
+### Phase 1 — Core harness
 
 Deliver:
 
 - Gradle multi-module project;
 - core domain types and asynchronous agent loop;
 - fake provider and fake tools;
-- CLI entry point;
 - deterministic unit test suite.
 
 Exit criteria: all agent-loop success, failure, limit, timeout, and cancellation cases pass without network access.
 
-### Phase 2 — ChatGPT/Codex development adapter
-
-Deliver:
-
-- isolated official Codex app-server adapter;
-- existing Codex/ChatGPT authentication reuse;
-- exact model and reasoning-effort selection;
-- synthetic client-owned tool smoke test.
-
-Exit criteria: the CLI can use the requested ChatGPT model to call a locally owned test tool. This validates the harness but does not commit the shipped Fabric mod to an external Codex process.
-
-### Phase 3 — Direct Minecraft Wiki retrieval
+### Phase 2 — Direct Minecraft Wiki retrieval
 
 Deliver:
 
@@ -681,19 +627,18 @@ Deliver:
 - mock integration tests and live smoke test;
 - grounding evaluation runner.
 
-Exit criteria: the CLI answers the evaluation questions with appropriate direct Wiki calls, concise text, and source links, while handling Wiki outages cleanly.
+Exit criteria: isolated integration tests answer the evaluation questions with appropriate direct Wiki calls, concise text, and source links while handling Wiki outages cleanly.
 
-### Phase 4 — Production providers
+### Phase 3 — Production providers
 
 Deliver:
 
 - OpenRouter provider;
 - model discovery/filtering;
-- environment-based CLI credential loading;
 - provider contract tests;
 - opt-in live smoke test.
 
-Exit criteria: the CLI can complete both a direct question and a synthetic local tool-calling question through a compatible OpenRouter model.
+Exit criteria: the provider passes both direct-answer and tool-calling contract tests through a compatible OpenRouter model.
 
 Then deliver:
 
@@ -704,7 +649,7 @@ Then deliver:
 
 Exit criteria: each provider passes the same core tool-loop scenarios, and unsupported models fail with an actionable message.
 
-### Phase 5 — Fabric mod
+### Phase 4 — Fabric mod
 
 Deliver:
 
@@ -717,7 +662,7 @@ Deliver:
 
 Exit criteria: a player can install the mod, configure a provider, join an unmodified multiplayer server, ask a Wiki-grounded question, and receive the answer without blocking the client or sending the command to the server.
 
-### Phase 6 — Post-MVP
+### Phase 5 — Post-MVP
 
 Potential work, prioritized only after usage feedback:
 
@@ -728,7 +673,7 @@ Potential work, prioritized only after usage feedback:
 - project-controlled Wiki retrieval deployment or direct MediaWiki adapter;
 - officially supported ChatGPT subscription authentication, if feasible.
 
-## 19. Initial Definition of Done
+## 18. Initial Definition of Done
 
 The first product milestone is complete when:
 
@@ -743,7 +688,7 @@ The first product milestone is complete when:
 9. Core and provider contract tests pass independently of Minecraft.
 10. Credentials are not exposed to servers, logs, source control, or chat.
 
-## 20. Open Decisions
+## 19. Open Decisions
 
 These decisions are intentionally deferred until their implementation phase:
 
@@ -757,9 +702,9 @@ These decisions are intentionally deferred until their implementation phase:
 - vanilla-only settings screen versus optional Mod Menu integration;
 - whether ChatGPT subscription authentication has a supported third-party path.
 
-None of these block the standalone core, fake-provider tests, or the first OpenRouter CLI slice.
+None of these block the reusable core, fake-provider tests, or the first OpenRouter provider slice.
 
-## 21. Research References
+## 20. Research References
 
 These links were checked during the 2026-09-18 research pass. Version-sensitive decisions must be revalidated when implemented.
 
@@ -770,6 +715,5 @@ These links were checked during the 2026-09-18 research pass. Version-sensitive 
 - [Ollama: tool calling](https://docs.ollama.com/capabilities/tool-calling)
 - [Ollama: list models](https://docs.ollama.com/api/tags)
 - [OpenAI: function calling with the Responses API](https://developers.openai.com/api/docs/guides/function-calling)
-- [OpenAI: Codex app-server](https://learn.chatgpt.com/docs/app-server)
 - [MediaWiki API](https://www.mediawiki.org/wiki/API:Main_page)
 - [Minecraft Wiki generative AI policy](https://minecraft.wiki/w/Minecraft_Wiki:Generative_AI_policy)

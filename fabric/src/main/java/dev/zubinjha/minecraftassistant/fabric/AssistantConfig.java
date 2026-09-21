@@ -9,7 +9,7 @@ public record AssistantConfig(
         String reasoningEffort,
         String wikiApiUrl
 ) {
-    public static final String DEFAULT_MODEL = "openai/gpt-5-mini";
+    public static final String DEFAULT_MODEL = "openai/gpt-5.6-luna";
 
     public AssistantConfig {
         apiKey = Objects.requireNonNullElse(apiKey, "").trim();

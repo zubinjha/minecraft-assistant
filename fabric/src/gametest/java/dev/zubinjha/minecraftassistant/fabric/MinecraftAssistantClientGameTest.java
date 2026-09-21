@@ -18,7 +18,10 @@ import javax.imageio.ImageIO;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
 @SuppressWarnings("UnstableApiUsage")
 public final class MinecraftAssistantClientGameTest implements FabricClientGameTest {
@@ -116,9 +119,13 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
         resetPreviewOutput(output);
         List<String> screenshots = new ArrayList<>();
         try (TestSingleplayerContext singleplayer = context.worldBuilder()
-                .adjustSettings(settings -> settings.setGameMode(
-                        WorldCreationUiState.SelectedGameMode.CREATIVE
-                ))
+                .adjustSettings(settings -> {
+                    settings.setGameMode(WorldCreationUiState.SelectedGameMode.CREATIVE);
+                    settings.getNormalPresetList().stream()
+                            .filter(entry -> entry.preset().is(WorldPresets.FLAT))
+                            .findFirst()
+                            .ifPresent(settings::setWorldType);
+                })
                 .create()) {
             singleplayer.getConnection().waitForChunksRender();
 
@@ -138,6 +145,7 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
                 torchProcess.set(torchProcess(client));
             });
 
+            captureChatPreview(context, output, screenshots);
             capture(context, output, screenshots, "single-recipe",
                     new ProductionPresentation.Single(quantityPresentations.get().get(2).cards().getLast()), 0);
             capture(context, output, screenshots, "one-step-plan", oneStep.get(), 0);
@@ -171,6 +179,37 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
             capture(context, output, screenshots, "small-window-six-step", sixStep.get(), 5);
         }
         writePreviewIndex(output, screenshots);
+    }
+
+    private static void captureChatPreview(
+            ClientGameTestContext context,
+            Path output,
+            List<String> screenshots
+    ) {
+        String name = "chat-answer";
+        context.runOnClient(client -> {
+            client.gui.setScreen(null);
+            client.gui.chatListener().handleSystemMessage(
+                    Component.literal("You: ").withStyle(ChatFormatting.AQUA)
+                            .append(Component.literal("where do I find a heart of the sea?")
+                                    .withStyle(ChatFormatting.WHITE)), false
+            );
+            client.gui.chatListener().handleSystemMessage(
+                    Component.literal("Assistant: ").withStyle(ChatFormatting.GREEN)
+                            .append(Component.literal(
+                                    "Find one in buried treasure chests. Use a buried treasure map from a shipwreck "
+                                            + "or ocean ruin to locate one."
+                            ).withStyle(ChatFormatting.WHITE)), false
+            );
+            client.gui.chatListener().handleSystemMessage(
+                    Component.literal("[Minecraft Wiki source]")
+                            .withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE), false
+            );
+        });
+        context.takeScreenshot(name);
+        Path copied = copyLatestScreenshot(name, output);
+        verifyScreenshot(copied);
+        screenshots.add(copied.getFileName().toString());
     }
 
     private static void capture(

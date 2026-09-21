@@ -73,6 +73,14 @@ final class NativeGuideTool implements Tool {
         return List.copyOf(tools);
     }
 
+    static List<ToolDefinition> benchmarkDefinitions() {
+        List<ToolDefinition> definitions = new ArrayList<>();
+        for (Kind kind : Kind.values()) {
+            definitions.add(new ToolDefinition(kind.toolName, kind.description, schema(kind)));
+        }
+        return List.copyOf(definitions);
+    }
+
     @Override
     public ToolDefinition definition() {
         return definition;

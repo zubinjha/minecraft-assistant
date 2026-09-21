@@ -11,8 +11,16 @@ This is an unreleased development build. GitHub Releases and Modrinth will becom
 3. On **Mods**, choose **Download Mods**, find **Fabric API**, and install version 0.160.0+26.2 or a newer compatible 26.2 release.
 4. Still on **Mods**, choose **Add File** and select the Minecraft Assistant JAR.
 5. Launch the instance and enter a local world.
-6. Run `/ask config`, enter an OpenRouter API key, keep the recommended model initially, and use **Test Connection**.
-7. Save, then try `/ask how do I craft a recovery compass?`, `/ask how do I smelt glass?`, or `/ask how do I go from sand to glass panes?`. Single operations use **Show Recipe**; connected production chains use one **Show N Steps** action.
+6. Create an [OpenRouter](https://openrouter.ai/) account and generate a secret on the
+   [API Keys page](https://openrouter.ai/settings/keys).
+7. Run `/ask config`. Paste the secret into **OpenRouter API key** and enter
+   `openai/gpt-5.6-luna` in **Model**. The model value is an `author/model-name` ID, not a URL.
+8. Leave reasoning on **low**, use **Test Connection**, and save.
+9. Try `/ask how do I craft a recovery compass?`, `/ask how do I smelt glass?`, or `/ask how do I go from sand to glass panes?`. Single operations use **Show Recipe**; connected production chains use one **Show N Steps** action.
+
+The README's [tested model table](../README.md#which-model-should-i-use) groups models by provider,
+then model, then reasoning level. Low reasoning is listed first because it is the recommended starting
+point; the model ID stays the same when switching that model between low and high reasoning.
 
 The development JAR is produced at:
 
@@ -57,6 +65,6 @@ Local credential files are convenient but are not equivalent to an operating-sys
 
 - **`/ask` is unknown:** confirm Fabric Loader, Fabric API, and the Minecraft Assistant mod are enabled for the same 26.2 instance.
 - **OpenRouter rejected the API key:** reopen `/ask config`, replace the key, and run **Test Connection**.
-- **The selected model is unavailable:** restore `openai/gpt-5-mini` or choose another OpenRouter model that supports tools.
+- **The selected model is unavailable:** restore `openai/gpt-5.6-luna` or copy another tested model ID from the README table.
 - **The Wiki is unavailable:** retry later; a failed retrieval should not crash or freeze Minecraft.
 - **A server owns `/ask`:** use `/mcai ask <question>`.
