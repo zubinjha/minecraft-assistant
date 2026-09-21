@@ -74,13 +74,19 @@ final class NativeProductionLayoutTest {
     void responsiveShellFitsSmallAndNormalGuiSizes() {
         ProductionCardScreen.ShellGeometry smallSingle = ProductionCardScreen.shellGeometry(320, 240, false);
         ProductionCardScreen.ShellGeometry smallMulti = ProductionCardScreen.shellGeometry(320, 240, true);
+        ProductionCardScreen.ShellGeometry smallComparison =
+                ProductionCardScreen.shellGeometry(320, 240, true, true);
         ProductionCardScreen.ShellGeometry normalMulti = ProductionCardScreen.shellGeometry(854, 480, true);
+        ProductionCardScreen.ShellGeometry sequence = ProductionCardScreen.sequenceShellGeometry(320, 240);
 
         assertTrue(smallSingle.fitsWithin(320, 240));
         assertTrue(smallMulti.fitsWithin(320, 240));
+        assertTrue(smallComparison.fitsWithin(320, 240));
         assertTrue(normalMulti.fitsWithin(854, 480));
+        assertTrue(sequence.fitsWithin(320, 240));
         assertEquals(176, smallMulti.width() - 20);
-        assertEquals(84, smallMulti.height() - 128);
+        assertEquals(84, smallMulti.height() - 138);
+        assertEquals(84, sequence.height() - 96);
     }
 
     @Test

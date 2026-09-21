@@ -3,9 +3,11 @@ package dev.zubinjha.minecraftassistant.fabric;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
@@ -15,8 +17,13 @@ import net.minecraft.world.item.ItemStack;
 public final class ProductionCardScreen extends Screen {
     private static final int SCREEN_MARGIN = 8;
     private static final int SHELL_WIDTH = 196;
-    private static final int SINGLE_HEIGHT = 150;
-    private static final int MULTI_HEIGHT = 212;
+    private static final int SINGLE_HEIGHT = 160;
+    private static final int SEQUENCE_HEIGHT = 180;
+    private static final int MULTI_HEIGHT = 222;
+    private static final int PLAN_SINGLE_HEIGHT = 144;
+    private static final int PLAN_STEPS_HEIGHT = 160;
+    private static final int COMPARISON_SINGLE_HEIGHT = 162;
+    private static final int COMPARISON_STEPS_HEIGHT = 180;
     private static final int NATIVE_TEXTURE_SIZE = 256;
     private static final int SLOT_SIZE = 16;
     private static final Identifier SLOT_SPRITE = Identifier.withDefaultNamespace("container/slot");
@@ -51,9 +58,9 @@ public final class ProductionCardScreen extends Screen {
 
     private final ProductionPresentation presentation;
     private final List<Button> tabButtons = new ArrayList<>();
+    private final List<Button> routeButtons = new ArrayList<>();
     private int selectedIndex;
-    private Button previousButton;
-    private Button nextButton;
+    private int selectedRouteIndex;
     private ProductionCardData.Slot frozenSlot;
     private int frozenAlternativeIndex;
     private boolean slotHoveredThisFrame;
@@ -72,20 +79,66 @@ public final class ProductionCardScreen extends Screen {
     }
 
     void selectCard(int index) {
-        selectedIndex = selectedIndex(selectedIndex, index, presentation.cards().size());
+        selectedIndex = selectedIndex(selectedIndex, index, activeCards().size());
         updateNavigation();
+    }
+
+    void selectRoute(int index) {
+        if (!(presentation instanceof ProductionPresentation.Comparison comparison)
+                || index < 0 || index >= comparison.routes().size() || index == selectedRouteIndex) {
+            return;
+        }
+        selectedRouteIndex = index;
+        selectedIndex = 0;
+        rebuildWidgets();
     }
 
     static int selectedIndex(int current, int requested, int cardCount) {
         return requested >= 0 && requested < cardCount ? requested : current;
     }
 
+    static boolean showsStepSelector(int operationCount) {
+        return operationCount > 1;
+    }
+
     static ShellGeometry shellGeometry(int screenWidth, int screenHeight, boolean multipleCards) {
+        return shellGeometry(screenWidth, screenHeight, multipleCards, false);
+    }
+
+    static ShellGeometry shellGeometry(
+            int screenWidth,
+            int screenHeight,
+            boolean multipleCards,
+            boolean comparison
+    ) {
         int shellHeight = multipleCards ? MULTI_HEIGHT : SINGLE_HEIGHT;
         int left = Math.max(SCREEN_MARGIN, (screenWidth - SHELL_WIDTH) / 2);
         int top = Math.max(SCREEN_MARGIN, (screenHeight - shellHeight) / 2);
-        int panelY = top + (multipleCards ? 88 : 27);
+        int panelY = top + (multipleCards ? 110 : 37);
         return new ShellGeometry(left, top, SHELL_WIDTH, shellHeight, left + 10, panelY);
+    }
+
+    static ShellGeometry planShellGeometry(
+            int screenWidth,
+            int screenHeight,
+            boolean comparison,
+            boolean multipleSteps
+    ) {
+        int shellHeight = comparison
+                ? multipleSteps ? COMPARISON_STEPS_HEIGHT : COMPARISON_SINGLE_HEIGHT
+                : multipleSteps ? PLAN_STEPS_HEIGHT : PLAN_SINGLE_HEIGHT;
+        int left = Math.max(SCREEN_MARGIN, (screenWidth - SHELL_WIDTH) / 2);
+        int top = Math.max(SCREEN_MARGIN, (screenHeight - shellHeight) / 2);
+        int panelOffset = comparison
+                ? multipleSteps ? 62 : 42
+                : multipleSteps ? 40 : 22;
+        return new ShellGeometry(left, top, SHELL_WIDTH, shellHeight, left + 10, top + panelOffset);
+    }
+
+    static ShellGeometry sequenceShellGeometry(int screenWidth, int screenHeight) {
+        int left = Math.max(SCREEN_MARGIN, (screenWidth - SHELL_WIDTH) / 2);
+        int top = Math.max(SCREEN_MARGIN, (screenHeight - SEQUENCE_HEIGHT) / 2);
+        return new ShellGeometry(left, top, SHELL_WIDTH, SEQUENCE_HEIGHT, left + 10, top + 64);
     }
 
     static String cookingDetails(int durationTicks, float experience) {
@@ -97,71 +150,104 @@ public final class ProductionCardScreen extends Screen {
         );
     }
 
+    private ShellGeometry currentShellGeometry() {
+        if (isPlan()) {
+            return planShellGeometry(width, height, isComparison(), showsStepSelector(activeCards().size()));
+        }
+        if (presentation instanceof ProductionPresentation.Sequence) {
+            return sequenceShellGeometry(width, height);
+        }
+        return shellGeometry(width, height, isMultiple(), false);
+    }
+
     @Override
     protected void init() {
         tabButtons.clear();
-        previousButton = null;
-        nextButton = null;
-        ShellGeometry shell = shellGeometry(width, height, isMultiple());
+        routeButtons.clear();
+        ShellGeometry shell = currentShellGeometry();
         int footerY = shell.top() + shell.height() - 28;
 
-        if (isMultiple()) {
-            int count = presentation.cards().size();
+        if (presentation instanceof ProductionPresentation.Comparison comparison) {
+            int count = comparison.routes().size();
+            int gap = 3;
+            int tabWidth = (shell.width() - 12 - (count - 1) * gap) / count;
+            int startX = shell.left() + 6;
+            for (int index = 0; index < count; index++) {
+                int routeIndex = index;
+                ProductionPresentation.Route route = comparison.routes().get(index);
+                Button tab = Button.builder(
+                                Component.literal(font.plainSubstrByWidth(
+                                        routeButtonLabel(route, index == selectedRouteIndex), tabWidth - 6)),
+                                button -> selectRoute(routeIndex)
+                        )
+                        .tooltip(Tooltip.create(routeTooltip(route)))
+                        .bounds(startX + index * (tabWidth + gap), shell.top() + 19, tabWidth, 18)
+                        .build();
+                routeButtons.add(tab);
+                addRenderableWidget(tab);
+            }
+        }
+
+        if (showsStepSelector(activeCards().size())) {
+            int count = activeCards().size();
             int tabWidth = 22;
             int gap = 3;
             int totalWidth = count * tabWidth + (count - 1) * gap;
             int startX = shell.left() + (shell.width() - totalWidth) / 2;
             for (int index = 0; index < count; index++) {
                 int cardIndex = index;
-                Button tab = Button.builder(Component.literal(Integer.toString(index + 1)), button ->
-                                selectCard(cardIndex))
-                        .bounds(startX + index * (tabWidth + gap), shell.top() + 51, tabWidth, 16)
-                        .build();
+                Button.Builder builder = Button.builder(Component.literal(Integer.toString(index + 1)), button ->
+                        selectCard(cardIndex));
+                if (isPlan()) {
+                    builder.tooltip(Tooltip.create(operationTooltipComponent(
+                            activeQuantityPlan().orElseThrow(),
+                            activeQuantityPlan().orElseThrow().operations().get(index)
+                    )));
+                } else if (presentation instanceof ProductionPresentation.Sequence) {
+                    builder.tooltip(Tooltip.create(Component.literal(
+                            ProductionStepLabel.describe(index, activeCards())
+                    )));
+                }
+                int tabY = isPlan()
+                        ? shell.top() + (isComparison() ? 42 : 20)
+                        : presentation instanceof ProductionPresentation.Sequence
+                        ? shell.top() + 32
+                        : shell.top() + 51;
+                Button tab = builder.bounds(startX + index * (tabWidth + gap), tabY, tabWidth, 16).build();
                 tabButtons.add(tab);
                 addRenderableWidget(tab);
             }
         }
 
-        if (presentation instanceof ProductionPresentation.Sequence) {
-            previousButton = addRenderableWidget(Button.builder(Component.literal("Previous"), button ->
-                            selectCard(selectedIndex - 1))
-                    .bounds(shell.left() + 6, footerY, 58, 20)
-                    .build());
-            nextButton = addRenderableWidget(Button.builder(Component.literal("Next"), button ->
-                            selectCard(selectedIndex + 1))
-                    .bounds(shell.left() + 69, footerY, 58, 20)
-                    .build());
-            addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
-                    .bounds(shell.left() + 132, footerY, 58, 20)
-                    .build());
-        } else {
-            addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
-                    .bounds(shell.left() + 48, footerY, 100, 20)
-                    .build());
-        }
+        addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
+                .bounds(shell.left() + 48, footerY, 100, 20)
+                .build());
         updateNavigation();
     }
 
     private void updateNavigation() {
+        for (int index = 0; index < routeButtons.size(); index++) {
+            Button route = routeButtons.get(index);
+            route.active = true;
+            ProductionPresentation.Route value = comparison().routes().get(index);
+            int availableWidth = route.getWidth() - 6;
+            route.setMessage(Component.literal(font.plainSubstrByWidth(
+                    routeButtonLabel(value, index == selectedRouteIndex), availableWidth
+            )));
+        }
         for (int index = 0; index < tabButtons.size(); index++) {
             Button tab = tabButtons.get(index);
-            tab.active = index != selectedIndex;
+            tab.active = true;
             tab.setMessage(Component.literal(index == selectedIndex
                     ? "[" + (index + 1) + "]"
                     : Integer.toString(index + 1)));
-        }
-        if (previousButton != null) {
-            previousButton.active = selectedIndex > 0;
-        }
-        if (nextButton != null) {
-            nextButton.active = selectedIndex < presentation.cards().size() - 1;
         }
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         graphics.fill(0, 0, width, height, 0x88000000);
-        ShellGeometry shell = shellGeometry(width, height, isMultiple());
+        ShellGeometry shell = currentShellGeometry();
         graphics.fill(
                 shell.left(),
                 shell.top(),
@@ -177,15 +263,34 @@ public final class ProductionCardScreen extends Screen {
                 0xE0282828
         );
 
-        ProductionCardData recipe = presentation.displayedCard(selectedIndex);
-        if (isMultiple()) {
-            String countLabel = presentation instanceof ProductionPresentation.Sequence
-                    ? presentation.cards().size() + " steps"
-                    : presentation.cards().size() + (presentation.recipeOnly() ? " recipes" : " guides");
+        ProductionCardData recipe = activeCards().get(selectedIndex);
+        Optional<ProductionPlan> quantityPlan = activeQuantityPlan();
+        if (quantityPlan.isPresent()) {
+            graphics.centeredText(font, presentation.targetTitle(), width / 2, shell.top() + 6, 0xFFFFFFFF);
+        } else if (presentation instanceof ProductionPresentation.Sequence sequence) {
+            graphics.centeredText(font, presentation.targetTitle(), width / 2, shell.top() + 6, 0xFFFFFFFF);
+            graphics.centeredText(
+                    font,
+                    sequence.cards().size() + " steps",
+                    width / 2,
+                    shell.top() + 18,
+                    0xFFAAAAAA
+            );
+            String stepLabel = ProductionStepLabel.describe(selectedIndex, activeCards());
+            String visibleLabel = font.plainSubstrByWidth(stepLabel, shell.width() - 16);
+            graphics.centeredText(font, visibleLabel, width / 2, shell.top() + 51, 0xFFFFFFFF);
+        } else if (isMultiple()) {
+            String countLabel = isComparison()
+                    ? comparison().routes().size() + " routes"
+                    : activeCards().size() + (presentation.recipeOnly() ? " recipes" : " guides");
             graphics.centeredText(font, presentation.targetTitle(), width / 2, shell.top() + 6, 0xFFFFFFFF);
             graphics.centeredText(font, countLabel, width / 2, shell.top() + 18, 0xFFAAAAAA);
-            drawPresentationFlow(graphics, shell, shell.top() + 31, mouseX, mouseY);
-            graphics.centeredText(font, recipe.title(), width / 2, shell.top() + 72, 0xFFFFFFFF);
+            int flowY = shell.top() + (isComparison() ? 52 : 31);
+            drawPresentationFlow(graphics, shell, flowY, mouseX, mouseY);
+            if (!isComparison()) {
+                int titleY = shell.top() + 72;
+                graphics.centeredText(font, recipe.title(), width / 2, titleY, 0xFFFFFFFF);
+            }
         } else {
             graphics.centeredText(font, recipe.title(), width / 2, shell.top() + 7, 0xFFFFFFFF);
         }
@@ -198,6 +303,87 @@ public final class ProductionCardScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
     }
 
+    static String planHeadline(ProductionPlan plan) {
+        StringBuilder result = new StringBuilder();
+        List<ProductionPlan.Material> materials = plan.orderedRootMaterials();
+        int shown = Math.min(3, materials.size());
+        for (int index = 0; index < shown; index++) {
+            if (index > 0) {
+                result.append(" + ");
+            }
+            ProductionPlan.Material material = materials.get(index);
+            result.append(ProductionPlan.count(material.count())).append(' ')
+                    .append(ProductionPlan.quantityName(material.name(), material.count()));
+        }
+        if (materials.size() > shown) {
+            result.append(" + ").append(materials.size() - shown).append(" materials");
+        }
+        result.append(" → ").append(ProductionPlan.count(plan.requestedCount()))
+                .append(' ').append(ProductionPlan.quantityName(plan.targetName(), plan.requestedCount()));
+        if (plan.producedCount() > plan.requestedCount()) {
+            result.append(" (makes ").append(ProductionPlan.count(plan.producedCount())).append(')');
+        }
+        return result.toString();
+    }
+
+    private static List<Component> planTooltip(ProductionPlan plan) {
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(Component.literal("Required materials").withStyle(ChatFormatting.WHITE));
+        for (ProductionPlan.Material material : plan.rootMaterials()) {
+            tooltip.add(Component.literal(ProductionPlan.count(material.count()) + " " + material.name())
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        tooltip.add(Component.literal("Requested: " + ProductionPlan.count(plan.requestedCount())
+                + " " + plan.targetName()).withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.literal("Produced: " + ProductionPlan.count(plan.producedCount())
+                + " " + plan.targetName()).withStyle(ChatFormatting.GRAY));
+        for (ProductionPlan.Material leftover : plan.leftovers()) {
+            String label = leftover.itemId().equals(plan.targetItemId()) ? "Extra: " : "Left over: ";
+            tooltip.add(Component.literal(label + ProductionPlan.count(leftover.count()) + " " + leftover.name())
+                    .withStyle(ChatFormatting.YELLOW));
+        }
+        if (plan.genericFuelOmitted()) {
+            tooltip.add(Component.literal("Generic fuel is not included").withStyle(ChatFormatting.GRAY));
+        }
+        return tooltip;
+    }
+
+    private static List<Component> operationTooltip(ProductionPlan plan, ProductionPlan.Operation operation) {
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(Component.literal(operation.method().displayName()).withStyle(ChatFormatting.WHITE));
+        tooltip.add(Component.literal(stepDetails(operation)).withStyle(ChatFormatting.GRAY));
+        for (ProductionPlan.Material input : operation.inputs()) {
+            tooltip.add(Component.literal(ProductionPlan.count(input.count()) + " " + input.name() + " in")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        tooltip.add(Component.literal(ProductionPlan.count(operation.outputProduced()) + " "
+                + operation.output().name() + " out").withStyle(ChatFormatting.GRAY));
+        if (operation.surplus() > 0) {
+            tooltip.add(Component.literal(ProductionPlan.count(operation.surplus()) + " surplus at this operation")
+                    .withStyle(ChatFormatting.YELLOW));
+        }
+        if (plan.genericFuelOmitted()
+                && switch (operation.method()) {
+                    case SMELTING, BLASTING, SMOKING -> true;
+                    default -> false;
+                }) {
+            tooltip.add(Component.literal("Generic fuel excluded").withStyle(ChatFormatting.GRAY));
+        }
+        return tooltip;
+    }
+
+    private static Component operationTooltipComponent(
+            ProductionPlan plan,
+            ProductionPlan.Operation operation
+    ) {
+        return tooltipComponent(operationTooltip(plan, operation));
+    }
+
+    private static Component tooltipComponent(List<Component> lines) {
+        return Component.literal(lines.stream().map(Component::getString)
+                .reduce((left, right) -> left + "\n" + right).orElse(""));
+    }
+
     private void drawPresentationFlow(
             GuiGraphicsExtractor graphics,
             ShellGeometry shell,
@@ -205,24 +391,41 @@ public final class ProductionCardScreen extends Screen {
             int mouseX,
             int mouseY
     ) {
-        int count = presentation.cards().size();
+        List<ProductionCardData> cards = activeCards();
+        int count = cards.size();
         int separatorWidth = 13;
         int totalWidth = count * SLOT_SIZE + (count - 1) * separatorWidth;
         int x = shell.left() + (shell.width() - totalWidth) / 2;
         for (int index = 0; index < count; index++) {
-            ItemStack result = presentation.cards().get(index).result().primary();
+            ItemStack result = cards.get(index).result().primary();
             if (!result.isEmpty()) {
                 graphics.item(result, x, y);
-                graphics.itemDecorations(font, result, x, y);
+                Optional<ProductionPlan> quantityPlan = activeQuantityPlan();
+                if (quantityPlan.isPresent()) {
+                    long scaled = quantityPlan.get().operations().get(index).outputProduced();
+                    String label = compactCount(scaled);
+                    graphics.text(font, label, x + 17 - font.width(label), y + 9, 0xFFFFFFFF, true);
+                } else {
+                    graphics.itemDecorations(font, result, x, y);
+                }
                 if (inside(mouseX, mouseY, x, y, SLOT_SIZE, SLOT_SIZE)) {
-                    graphics.setTooltipForNextFrame(font, result, mouseX, mouseY);
+                    if (quantityPlan.isPresent()) {
+                        graphics.setComponentTooltipForNextFrame(
+                                font,
+                                quantityTooltip(result, quantityPlan.get(), index),
+                                mouseX,
+                                mouseY
+                        );
+                    } else {
+                        graphics.setTooltipForNextFrame(font, result, mouseX, mouseY);
+                    }
                 }
             }
             x += SLOT_SIZE;
             if (index < count - 1) {
                 graphics.text(
                         font,
-                        presentation instanceof ProductionPresentation.Sequence ? "→" : "·",
+                        isComparison() ? "→" : "·",
                         x + 3,
                         y + 4,
                         0xFFAAAAAA
@@ -743,6 +946,61 @@ public final class ProductionCardScreen extends Screen {
                 .toList();
     }
 
+    static String stepDetails(ProductionPlan.Operation step) {
+        return ProductionPlan.count(step.batches()) + " craft" + (step.batches() == 1 ? "" : "s")
+                + " · " + ProductionPlan.count(step.consumedInput()) + " in > "
+                + ProductionPlan.count(step.outputProduced()) + " out"
+                + (step.surplus() > 0 ? " · " + ProductionPlan.count(step.surplus()) + " surplus" : "");
+    }
+
+    static String compactCount(long count) {
+        if (count < 1_000) {
+            return Long.toString(count);
+        }
+        if (count < 1_000_000) {
+            return String.format(Locale.ROOT, count < 10_000 ? "%.1fk" : "%.0fk", count / 1_000.0);
+        }
+        return String.format(Locale.ROOT, count < 10_000_000 ? "%.1fM" : "%.0fM", count / 1_000_000.0);
+    }
+
+    private static List<Component> quantityTooltip(
+            ItemStack result,
+            ProductionPlan plan,
+            int stepIndex
+    ) {
+        ProductionPlan.Operation step = plan.operations().get(stepIndex);
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(result.getHoverName());
+        tooltip.add(Component.literal("Batches: " + ProductionPlan.count(step.batches()))
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.literal("Consumed inputs: " + ProductionPlan.count(step.consumedInput()))
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.literal("Produced: " + ProductionPlan.count(step.outputProduced()))
+                .withStyle(ChatFormatting.GRAY));
+        if (step.surplus() > 0) {
+            tooltip.add(Component.literal("Surplus: " + ProductionPlan.count(step.surplus()))
+                    .withStyle(ChatFormatting.YELLOW));
+        }
+        for (ProductionPlan.Material material : step.inputs()) {
+            String alternatives = material.alternatives().size() > 1 ? " (compatible alternatives)" : "";
+            tooltip.add(Component.literal(ProductionPlan.count(material.count()) + " "
+                    + material.name() + alternatives).withStyle(ChatFormatting.GRAY));
+        }
+        if (plan.genericFuelOmitted()
+                && presentationStepUsesGenericFuel(plan, stepIndex)) {
+            tooltip.add(Component.literal("Generic fuel excluded").withStyle(ChatFormatting.GRAY));
+        }
+        return tooltip;
+    }
+
+    private static boolean presentationStepUsesGenericFuel(ProductionPlan plan, int stepIndex) {
+        return plan.genericFuelOmitted() && plan.operations().get(stepIndex).method() != ProductionMethod.CRAFTING
+                && switch (plan.operations().get(stepIndex).method()) {
+                    case SMELTING, BLASTING, SMOKING -> true;
+                    default -> false;
+                };
+    }
+
     private static Component workstationName(ProductionCardData recipe) {
         ProductionCardData.Slot station = station(recipe);
         if (station != null && !station.primary().isEmpty()) {
@@ -767,7 +1025,68 @@ public final class ProductionCardScreen extends Screen {
     }
 
     private boolean isMultiple() {
-        return presentation.cards().size() > 1;
+        return isPlan() || activeCards().size() > 1;
+    }
+
+    private boolean isPlan() {
+        return presentation instanceof ProductionPresentation.Plan || isComparison();
+    }
+
+    private boolean isComparison() {
+        return presentation instanceof ProductionPresentation.Comparison;
+    }
+
+    private ProductionPresentation.Comparison comparison() {
+        return (ProductionPresentation.Comparison) presentation;
+    }
+
+    private List<ProductionCardData> activeCards() {
+        if (presentation instanceof ProductionPresentation.Comparison comparison) {
+            return comparison.routes().get(selectedRouteIndex).cards();
+        }
+        return presentation.cards();
+    }
+
+    private Optional<ProductionPlan> activeQuantityPlan() {
+        if (presentation instanceof ProductionPresentation.Comparison comparison) {
+            return Optional.of(comparison.routes().get(selectedRouteIndex).plan());
+        }
+        if (presentation instanceof ProductionPresentation.Plan plan) {
+            return Optional.of(plan.plan());
+        }
+        return Optional.empty();
+    }
+
+    static String routeTabLabel(ProductionPresentation.Route route) {
+        ProductionPlan plan = route.plan();
+        ProductionPlan.Material source = plan.sourceMaterial().orElse(plan.orderedRootMaterials().getFirst());
+        String additional = plan.rootMaterials().size() > 1 ? " +" + (plan.rootMaterials().size() - 1) : "";
+        return compactRouteLabel(route.label()) + " · " + ProductionPlan.count(source.count()) + additional;
+    }
+
+    private static String compactRouteLabel(String label) {
+        return switch (label) {
+            case "Stonecutting" -> "Cutter";
+            case "Smelting" -> "Furnace";
+            case "Blasting" -> "Blast";
+            case "Smoking" -> "Smoker";
+            case "Campfire Cooking" -> "Campfire";
+            default -> label;
+        };
+    }
+
+    static String routeButtonLabel(ProductionPresentation.Route route, boolean selected) {
+        String label = routeTabLabel(route);
+        return selected ? "[" + label + "]" : label;
+    }
+
+    private static Component routeTooltip(ProductionPresentation.Route route) {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.literal(route.label()).withStyle(ChatFormatting.WHITE));
+        lines.addAll(planTooltip(route.plan()));
+        lines.add(Component.literal(route.plan().operations().size() + " step"
+                + (route.plan().operations().size() == 1 ? "" : "s")).withStyle(ChatFormatting.GRAY));
+        return tooltipComponent(lines);
     }
 
     private static boolean inside(int mouseX, int mouseY, int x, int y, int width, int height) {
@@ -789,4 +1108,5 @@ public final class ProductionCardScreen extends Screen {
                     && top + height <= screenHeight - SCREEN_MARGIN;
         }
     }
+
 }
