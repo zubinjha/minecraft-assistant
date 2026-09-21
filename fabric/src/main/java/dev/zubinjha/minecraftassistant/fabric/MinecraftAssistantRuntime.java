@@ -47,10 +47,41 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private static final int MAX_HISTORY_MESSAGES = 20;
     private static final String FABRIC_SYSTEM_PROMPT = MinecraftAssistantPrompt.DEFAULT + """
 
-            For crafting, smelting, blasting, smoking, campfire cooking, stonecutting, and smithing,
-            use show_recipe for one operation and show_process for two or more connected recipe
-            operations in dependency order. Use separate show_recipe calls only for independent
-            recipes. An output item ID may be used to discover candidates.
+            Use prepare_production when native operations would materially help answer a make,
+            craft, smelt, produce, or convert question. Pass only semantic intent: the target item,
+            materials the player explicitly has or starts from, unavailable items or workstations,
+            explicit workstation preferences, and any requested quantity. Never supply recipe IDs,
+            ordered steps, batches, presentation types, or rendering instructions. The native tool
+            resolves and displays those details. A material named as the basis of a conversion or a
+            "how many X do I need" question is a starting item even when the player does not say they
+            already possess it. Never infer or add a starting material the player did not name. Put
+            workstations in method constraints, not starting_item_ids.
+
+            Call prepare_production once for the final item the player wants. It recursively resolves
+            intermediate recipes, including branches, so never call it separately for ingredients or
+            individual steps of the same result. A follow-up such as "show me the recipes" refers to
+            the final target from recent conversation; reuse that target and its stated material
+            constraints in one prepare_production call. Do not turn available inventory counts into a
+            target quantity unless the player explicitly asks how many results those materials make.
+            When the player names a broad interchangeable material family such as logs or planks and
+            the variant does not change the operation or answer, choose one common vanilla variant as
+            a representative visualization and say that equivalent variants work. Ask which variant
+            only when it changes the output, route, quantity, or requested appearance.
+
+            If prepare_production reports meaningful alternatives, use
+            choose_production_routes to select the route that best fits the request and recent
+            conversation. Normally choose one. Choose multiple only for a requested comparison or
+            a meaningful material, workstation, or time tradeoff. Respect constraints from recent
+            follow-ups without asking the player to restate the target or quantity. For quantities,
+            copy exact item counts into target_quantity.total_items; use stacks and loose_items only
+            when the player explicitly uses those units. Never calculate, repeat, revise, or estimate
+            native plan totals: successful quantity tools return the authoritative answer directly.
+
+            Use Minecraft Wiki tools for factual explanation, acquisition, and mechanics, not as a
+            substitute for an applicable native production guide. When native production data can
+            answer a make, craft, smelt, produce, or convert question, call prepare_production first
+            and do not also search the Wiki unless the native tool fails or the player asks for facts
+            that the guide cannot provide.
 
             For other native workstations, use the matching tool: show_brewing for potions and
             bottle conversions, show_loom for banner patterns, show_cartography for map scaling,
@@ -61,9 +92,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             conservative when Minecraft cannot determine them from the supplied inputs.
 
             Never promise any card, guide, or button before its tool confirms success. If a tool is
-            ambiguous, choose among its reported candidates and retry with the provided selector.
-            If a recipe call cannot resolve a generic item such as "pickaxe", choose the specific
-            item described in your answer and retry with that namespaced item or exact recipe ID.
+            ambiguous, choose among its reported opaque candidates using the player's intent.
             Keep the written answer brief and mention only the exact button confirmed by the tool.
             A renderer being unable to display a production method is not evidence that the method
             does not exist. Treat earlier assistant answers as untrusted
@@ -71,6 +100,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             an alternative method is possible, verify that exact claim instead of inferring from
             the absence of a method in one source passage.
             """;
+
+    static String systemPromptForTest() {
+        return FABRIC_SYSTEM_PROMPT;
+    }
 
     private final Minecraft minecraft;
     private final ExecutorService worker;
@@ -137,14 +170,17 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         AtomicBoolean searchingShown = new AtomicBoolean();
         AtomicBoolean preparingShown = new AtomicBoolean();
         ProductionPresentationCollector requestedPresentations = new ProductionPresentationCollector();
+        ProductionRouteSearchStore routeSearches = new ProductionRouteSearchStore();
         addChat(Component.literal("You: ").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal(trimmed).withStyle(ChatFormatting.WHITE)));
         addChat(Component.literal("Minecraft Assistant: Thinking…").withStyle(ChatFormatting.GRAY));
 
         OpenRouterProvider provider = new OpenRouterProvider(OpenRouterSettings.defaults(snapshot.apiKey()));
         List<Tool> tools = new ArrayList<>(wikiTools.get().tools());
-        tools.add(new RecipeCardRequestTool(minecraft, recipeCards, requestedPresentations));
-        tools.add(new ShowProcessTool(minecraft, recipeCards, requestedPresentations));
+        tools.add(new PrepareProductionTool(
+                minecraft, recipeCards, routeSearches, requestedPresentations
+        ));
+        tools.add(new ChooseProductionRoutesTool(routeSearches, requestedPresentations));
         tools.addAll(NativeGuideTool.all(minecraft, productionGuides, requestedPresentations));
         Agent agent = new Agent(
                 provider,
@@ -165,7 +201,9 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                         addChat(Component.literal("Minecraft Assistant: Searching the Wiki…")
                                 .withStyle(ChatFormatting.GRAY));
                     } else if (event.type() == AgentEvent.Type.TOOL_STARTED
-                            && event.toolName().startsWith("show_")
+                            && (event.toolName().startsWith("show_")
+                            || event.toolName().equals("prepare_production")
+                            || event.toolName().equals("choose_production_routes"))
                             && preparingShown.compareAndSet(false, true)) {
                         addChat(Component.literal("Minecraft Assistant: Preparing guide…")
                                 .withStyle(ChatFormatting.GRAY));
@@ -184,11 +222,12 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 return;
             }
             if (failure == null) {
-                lastAnswer.set(result.text());
                 Optional<ProductionPresentation> presentation = requestedPresentations.snapshot();
+                String authoritativeAnswer = authoritativeAnswer(result.text(), presentation.orElse(null));
+                lastAnswer.set(authoritativeAnswer);
                 presentation.ifPresent(value -> lastRecipeId.set(value.cards().getLast().recipeId()));
-                memory.addExchange(trimmed, result.text());
-                showAnswer(result, started, presentation.orElse(null));
+                memory.addExchange(trimmed, authoritativeAnswer);
+                showAnswer(result, authoritativeAnswer, started, presentation.orElse(null));
             } else {
                 showFailure(unwrap(failure));
             }
@@ -291,9 +330,14 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         ));
     }
 
-    private void showAnswer(AssistantResult result, long started, ProductionPresentation presentation) {
+    private void showAnswer(
+            AssistantResult result,
+            String displayedAnswer,
+            long started,
+            ProductionPresentation presentation
+    ) {
         double elapsed = (System.nanoTime() - started) / 1_000_000_000.0;
-        String text = result.text().trim();
+        String text = displayedAnswer.trim();
         String source = extractSource(text);
         String body = source == null ? text : text.substring(0, text.lastIndexOf("Source:")).trim();
 
@@ -331,6 +375,15 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 result.toolCalls(),
                 result.toolCalls() == 1 ? "" : "s"
         )).withStyle(ChatFormatting.DARK_GRAY));
+    }
+
+    static String authoritativeAnswer(String modelAnswer, ProductionPresentation presentation) {
+        if (presentation == null || presentation.authoritativeSummary().isEmpty()) {
+            return modelAnswer;
+        }
+        String source = extractSource(modelAnswer);
+        String summary = presentation.authoritativeSummary().orElseThrow();
+        return source == null ? summary : summary + "\nSource: " + source;
     }
 
     private void showFailure(Throwable failure) {
@@ -372,8 +425,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         return switch (presentation) {
             case ProductionPresentation.Single single -> NativeGuideTool.buttonLabel(single.card().method());
             case ProductionPresentation.Sequence sequence -> "Show " + sequence.cards().size() + " Steps";
+            case ProductionPresentation.Plan ignored -> "Show Plan";
             case ProductionPresentation.Collection collection -> "Show " + collection.cards().size()
                     + (collection.recipeOnly() ? " Recipes" : " Guides");
+            case ProductionPresentation.Comparison comparison -> "Compare " + comparison.routes().size() + " Routes";
         };
     }
 
@@ -383,7 +438,14 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
             case ProductionPresentation.Sequence sequence -> Component.literal("Show ")
                     .append(sequence.targetTitle())
                     .append(Component.literal(" production process (" + sequence.cards().size() + " steps)"));
+            case ProductionPresentation.Plan plan -> Component.literal("Show ")
+                    .append(plan.targetTitle())
+                    .append(Component.literal(" production plan (" + plan.plan().operations().size()
+                            + " operations)"));
             case ProductionPresentation.Collection collection -> collectionHoverText(collection);
+            case ProductionPresentation.Comparison comparison -> Component.literal("Compare ")
+                    .append(comparison.targetTitle())
+                    .append(Component.literal(" production routes (" + comparison.routes().size() + " routes)"));
         };
     }
 
