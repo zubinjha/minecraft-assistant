@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -18,6 +19,7 @@ import javax.imageio.ImageIO;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.network.chat.Component;
@@ -34,6 +36,15 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
             runUiPreview(context);
             return;
         }
+        AtomicReference<String> sharedChat = new AtomicReference<>();
+        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receivedAt) -> {
+            String content = signedMessage == null ? message.getString() : signedMessage.signedContent();
+            if (content.startsWith(SharedResponseMessages.PREFIX)
+                    || content.startsWith(SharedResponseMessages.FIRST_PREFIX)
+                    || content.startsWith(SharedResponseMessages.SECOND_PREFIX)) {
+                sharedChat.compareAndSet(null, content);
+            }
+        });
         try (TestSingleplayerContext singleplayer = context.worldBuilder()
                 .adjustSettings(settings -> settings.setGameMode(
                         WorldCreationUiState.SelectedGameMode.CREATIVE
@@ -59,6 +70,25 @@ public final class MinecraftAssistantClientGameTest implements FabricClientGameT
                 context.waitForScreen(ProductionCardScreen.class);
                 context.takeScreenshot("minecraft-assistant-quantity-plan-" + screenshotIndex);
                 context.runOnClient(client -> client.gui.setScreen(null));
+            }
+
+            context.runOnClient(client -> {
+                MinecraftAssistantClient.runtimeForTest().setSharedResponseForTest(new SharedResponse(
+                        "A recovery compass uses one compass and eight echo shards.",
+                        Optional.of(URI.create("https://minecraft.wiki/w/Recovery_Compass")),
+                        Optional.of(new SharedResponse.Recipe(
+                                "minecraft:recovery_compass", ProductionMethod.CRAFTING
+                        ))
+                ));
+                client.getConnection().sendCommand("ask share");
+            });
+            context.waitFor(client -> sharedChat.get() != null, 200);
+            String shared = sharedChat.get();
+            if (shared.length() > SharedResponseMessages.MAX_CHAT_LENGTH
+                    || !shared.contains("A recovery compass uses one compass and eight echo shards.")
+                    || !shared.contains("Source: https://minecraft.wiki/w/Recovery_Compass")
+                    || !shared.contains("Recipe: minecraft:recovery_compass (crafting)")) {
+                throw new AssertionError("Shared assistant response did not survive the chat round trip: " + shared);
             }
 
             context.runOnClient(client -> client.getConnection().sendCommand(

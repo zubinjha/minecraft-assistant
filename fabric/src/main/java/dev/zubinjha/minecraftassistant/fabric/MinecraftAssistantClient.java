@@ -13,6 +13,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -33,6 +34,15 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> runtime.close());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
                 runtime.resetConversationSession());
+        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receivedAt) -> {
+            if (sender == null) {
+                return;
+            }
+            SharedResponseEnhancer.enhancement(signedMessage, sender.name()).ifPresent(actions -> {
+                Minecraft minecraft = Minecraft.getInstance();
+                minecraft.execute(() -> minecraft.gui.hud.getChat().addClientSystemMessage(actions));
+            });
+        });
     }
 
     static MinecraftAssistantRuntime runtimeForTest() {
@@ -59,6 +69,10 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
                                     runtime
                             )
                     ));
+                    return 1;
+                }))
+                .then(literal("share").executes(context -> {
+                    runtime.shareLatest();
                     return 1;
                 }))
                 .then(literal("stop").executes(context -> {
@@ -103,6 +117,7 @@ public final class MinecraftAssistantClient implements ClientModInitializer {
         source.sendFeedback(Component.literal("Minecraft Assistant").withStyle(ChatFormatting.YELLOW));
         helpLine(source, "/ask <question>", "Ask a Minecraft question");
         helpLine(source, "/ask config", "Configure the provider and model");
+        helpLine(source, "/ask share", "Share the latest answer in player chat");
         helpLine(source, "/ask stop", "Cancel the current request");
         helpLine(source, "/ask clear", "Forget conversation history");
         helpLine(source, "/ask help", "Show this help");

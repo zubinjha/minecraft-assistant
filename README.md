@@ -111,6 +111,7 @@ When several genuinely different routes exist, the assistant can select the one 
 | --- | --- |
 | `/ask <question>` | Ask a Minecraft question |
 | `/ask config` | Open provider and model settings |
+| `/ask share` | Share the latest answer in player chat |
 | `/ask stop` | Cancel the active request |
 | `/ask clear` | Forget recent conversation history |
 | `/ask help` | Show the in-game command guide |
@@ -118,6 +119,8 @@ When several genuinely different routes exist, the assistant can select the one 
 If a multiplayer server already owns `/ask`, use `/mcai ask <question>` instead.
 
 The assistant remembers up to 20 recent user and assistant messages—about ten complete exchanges. That memory stays in RAM, resets when you leave the current world or server, and can be cleared manually with `/ask clear`.
+
+`/ask share` sends the latest successful answer through ordinary player chat, so it works on vanilla servers and Java Realms without a server mod. Players without Minecraft Assistant see readable text. Players with the mod also get local source and final-recipe buttons when that metadata is available. Long answers use at most two chat messages, and `/ask clear` also clears the answer available to share.
 
 ## Native guides
 
@@ -145,6 +148,7 @@ The mod has no Minecraft Assistant account or hosted backend:
 - Wiki search terms and page names are sent directly to `minecraft.wiki/api.php`.
 - The OpenRouter key is stored inside the individual Minecraft instance, separately from ordinary settings, and is masked in the configuration screen.
 - Provider credentials are never sent to Minecraft servers or Minecraft Wiki.
+- Only an explicit `/ask share` sends an assistant answer, source URL, or recipe reference to the current Minecraft server's player chat.
 - Wiki responses are cached in memory for ten minutes; conversation history and visual-guide links are not persisted.
 
 ## Minecraft Wiki attribution
