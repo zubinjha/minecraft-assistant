@@ -138,6 +138,69 @@ final class AgentTest {
     }
 
     @Test
+    void terminalToolResultCompletesWithoutAnotherProviderTurn() {
+        ToolCall call = new ToolCall("call-1", "finish", JSON.createObjectNode());
+        ScriptedProvider provider = ScriptedProvider.sync(request -> ModelResponse.tools(List.of(call)));
+        Tool terminal = new Tool() {
+            @Override
+            public ToolDefinition definition() {
+                return new ToolDefinition("finish", "Finishes authoritatively", objectSchema());
+            }
+
+            @Override
+            public CompletionStage<ToolExecutionResult> execute(
+                    JsonNode arguments,
+                    CancellationToken cancellation
+            ) {
+                return CompletableFuture.completedFuture(ToolExecutionResult.terminal(
+                        "authoritative result ready", "Calculated: exact answer."
+                ));
+            }
+        };
+        List<AgentEvent> events = new ArrayList<>();
+        Agent agent = new Agent(
+                provider,
+                new ToolRegistry(List.of(terminal)),
+                AgentOptions.DEFAULT,
+                scheduler,
+                events::add
+        );
+
+        AssistantResult result = agent.ask(request("calculate"), CancellationToken.NONE)
+                .toCompletableFuture().join();
+
+        assertEquals("Calculated: exact answer.", result.text());
+        assertEquals(1, result.providerTurns());
+        assertEquals(1, result.toolCalls());
+        assertEquals(5, result.conversation().size());
+        assertEquals("Calculated: exact answer.", assertInstanceOf(
+                ConversationMessage.Assistant.class,
+                result.conversation().get(result.conversation().size() - 1)
+        ).text());
+        assertEquals(AgentEvent.Type.ANSWER_COMPLETED, events.get(events.size() - 1).type());
+        assertEquals("terminalToolResult=true", events.get(events.size() - 1).detail());
+    }
+
+    @Test
+    void rejectsConflictingTerminalToolResults() {
+        ScriptedProvider provider = ScriptedProvider.sync(request -> ModelResponse.tools(List.of(
+                new ToolCall("call-1", "first", JSON.createObjectNode()),
+                new ToolCall("call-2", "second", JSON.createObjectNode())
+        )));
+        Tool first = terminalTool("first", "one");
+        Tool second = terminalTool("second", "two");
+        Agent agent = agent(provider, new ToolRegistry(List.of(first, second)), AgentOptions.DEFAULT);
+
+        CompletionException failure = assertThrows(
+                CompletionException.class,
+                () -> agent.ask(request("conflict"), CancellationToken.NONE).toCompletableFuture().join()
+        );
+
+        AssistantException assistantFailure = assertInstanceOf(AssistantException.class, failure.getCause());
+        assertEquals(ErrorCode.PROTOCOL_ERROR, assistantFailure.code());
+    }
+
+    @Test
     void returnsUnknownToolAsStructuredFailure() {
         ScriptedProvider provider = ScriptedProvider.sync(
                 request -> ModelResponse.tools(List.of(
@@ -317,6 +380,23 @@ final class AgentTest {
             ) {
                 order.add(name);
                 return CompletableFuture.completedFuture(ToolExecutionResult.text(name + " result"));
+            }
+        };
+    }
+
+    private static Tool terminalTool(String name, String answer) {
+        return new Tool() {
+            @Override
+            public ToolDefinition definition() {
+                return new ToolDefinition(name, "Terminal tool", objectSchema());
+            }
+
+            @Override
+            public CompletionStage<ToolExecutionResult> execute(
+                    JsonNode arguments,
+                    CancellationToken cancellation
+            ) {
+                return CompletableFuture.completedFuture(ToolExecutionResult.terminal("ready", answer));
             }
         };
     }

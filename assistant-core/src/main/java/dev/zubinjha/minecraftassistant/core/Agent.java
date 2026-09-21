@@ -143,15 +143,41 @@ public final class Agent implements Assistant {
         }
 
         state.messages.add(new ConversationMessage.Assistant(response.text(), response.toolCalls()));
-        CompletionStage<Void> chain = CompletableFuture.completedFuture(null);
+        CompletionStage<OptionalTerminalAnswer> chain = CompletableFuture.completedFuture(
+                new OptionalTerminalAnswer(null)
+        );
         for (ToolCall call : response.toolCalls()) {
-            chain = chain.thenCompose(ignored -> executeTool(state, call, cancellation)
-                    .thenAccept(state.messages::add));
+            chain = chain.thenCompose(terminal -> executeTool(state, call, cancellation)
+                    .thenApply(outcome -> {
+                        state.messages.add(outcome.message());
+                        if (outcome.terminalAnswer().isEmpty()) {
+                            return terminal;
+                        }
+                        if (terminal.answer() != null) {
+                            throw new AssistantException(
+                                    ErrorCode.PROTOCOL_ERROR,
+                                    "Multiple tools returned conflicting final answers"
+                            );
+                        }
+                        return new OptionalTerminalAnswer(outcome.terminalAnswer().orElseThrow());
+                    }));
         }
-        return chain.thenCompose(ignored -> loop(state, cancellation));
+        return chain.thenCompose(terminal -> {
+            if (terminal.answer() == null) {
+                return loop(state, cancellation);
+            }
+            state.messages.add(new ConversationMessage.Assistant(terminal.answer(), List.of()));
+            emit(AgentEvent.Type.ANSWER_COMPLETED, state, "", "terminalToolResult=true");
+            return CompletableFuture.completedFuture(new AssistantResult(
+                    terminal.answer(),
+                    state.messages,
+                    state.providerTurns,
+                    state.toolCalls
+            ));
+        });
     }
 
-    private CompletionStage<ConversationMessage.ToolResult> executeTool(
+    private CompletionStage<ToolOutcome> executeTool(
             State state,
             ToolCall call,
             CancellationToken cancellation
@@ -188,22 +214,20 @@ public final class Agent implements Assistant {
                     throw new CompletionException(cause);
                 }
                 emit(AgentEvent.Type.TOOL_FAILED, state, call.name(), safeFailureMessage(cause));
-                return new ConversationMessage.ToolResult(
-                        call.callId(),
-                        call.name(),
-                        "Tool execution failed: " + safeFailureMessage(cause),
-                        false
-                );
+                return new ToolOutcome(new ConversationMessage.ToolResult(
+                        call.callId(), call.name(),
+                        "Tool execution failed: " + safeFailureMessage(cause), false
+                ), java.util.Optional.empty());
             }
 
-            if (toolResult.content().length() > options.maxToolResultChars()) {
+            if (toolResult.content().length() > options.maxToolResultChars()
+                    || toolResult.terminalAnswer()
+                    .map(answer -> answer.length() > options.maxToolResultChars()).orElse(false)) {
                 emit(AgentEvent.Type.TOOL_FAILED, state, call.name(), "result too large");
-                return new ConversationMessage.ToolResult(
-                        call.callId(),
-                        call.name(),
-                        "Tool execution failed: result exceeded the configured size limit",
-                        false
-                );
+                return new ToolOutcome(new ConversationMessage.ToolResult(
+                        call.callId(), call.name(),
+                        "Tool execution failed: result exceeded the configured size limit", false
+                ), java.util.Optional.empty());
             }
             emit(
                     AgentEvent.Type.TOOL_COMPLETED,
@@ -211,23 +235,21 @@ public final class Agent implements Assistant {
                     call.name(),
                     "resultChars=" + toolResult.content().length()
             );
-            return new ConversationMessage.ToolResult(
-                    call.callId(),
-                    call.name(),
-                    toolResult.content(),
-                    true
-            );
+            return new ToolOutcome(new ConversationMessage.ToolResult(
+                    call.callId(), call.name(), toolResult.content(), true
+            ), toolResult.terminalAnswer());
         });
     }
 
-    private CompletionStage<ConversationMessage.ToolResult> completedToolFailure(
+    private CompletionStage<ToolOutcome> completedToolFailure(
             State state,
             ToolCall call,
             String message
     ) {
         emit(AgentEvent.Type.TOOL_FAILED, state, call.name(), message);
-        return CompletableFuture.completedFuture(new ConversationMessage.ToolResult(
-                call.callId(), call.name(), message, false
+        return CompletableFuture.completedFuture(new ToolOutcome(
+                new ConversationMessage.ToolResult(call.callId(), call.name(), message, false),
+                java.util.Optional.empty()
         ));
     }
 
@@ -304,5 +326,14 @@ public final class Agent implements Assistant {
             messages.addAll(request.history());
             messages.add(new ConversationMessage.User(request.question()));
         }
+    }
+
+    private record ToolOutcome(
+            ConversationMessage.ToolResult message,
+            java.util.Optional<String> terminalAnswer
+    ) {
+    }
+
+    private record OptionalTerminalAnswer(String answer) {
     }
 }
