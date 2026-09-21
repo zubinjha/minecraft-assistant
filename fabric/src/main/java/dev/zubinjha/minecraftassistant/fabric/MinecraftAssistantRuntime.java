@@ -116,6 +116,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
     private final AtomicReference<String> lastFailure = new AtomicReference<>("");
     private final AtomicReference<String> lastRecipeId = new AtomicReference<>("");
+    private final SharedResponseState sharedResponses = new SharedResponseState();
     private final ProductionPresentationStore recipePresentations = new ProductionPresentationStore(20);
     private volatile AssistantConfig config;
 
@@ -226,6 +227,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
                 String authoritativeAnswer = authoritativeAnswer(result.text(), presentation.orElse(null));
                 lastAnswer.set(authoritativeAnswer);
                 presentation.ifPresent(value -> lastRecipeId.set(value.cards().getLast().recipeId()));
+                sharedResponses.update(SharedResponse.from(authoritativeAnswer, presentation.orElse(null)));
                 memory.addExchange(trimmed, authoritativeAnswer);
                 showAnswer(result, authoritativeAnswer, started, presentation.orElse(null));
             } else {
@@ -252,7 +254,25 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
 
     public void clearMemory() {
         memory.clear();
+        sharedResponses.clear();
         addChat(Component.literal("Minecraft Assistant: Conversation cleared.").withStyle(ChatFormatting.GRAY));
+    }
+
+    public void shareLatest() {
+        Optional<SharedResponse> shared = sharedResponses.latest();
+        if (shared.isEmpty()) {
+            addChat(Component.literal("Minecraft Assistant: There is no answer to share yet.")
+                    .withStyle(ChatFormatting.YELLOW));
+            return;
+        }
+        minecraft.execute(() -> {
+            if (minecraft.getConnection() == null) {
+                addChat(Component.literal("Minecraft Assistant: Join a world or server before sharing.")
+                        .withStyle(ChatFormatting.YELLOW));
+                return;
+            }
+            SharedResponseMessages.format(shared.orElseThrow()).forEach(minecraft.getConnection()::sendChat);
+        });
     }
 
     public void resetConversationSession() {
@@ -262,6 +282,7 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
         lastAnswer.set("");
         lastFailure.set("");
         lastRecipeId.set("");
+        sharedResponses.clear();
     }
 
     public CompletionStage<String> testConnection(AssistantConfig candidate) {
@@ -301,6 +322,10 @@ public final class MinecraftAssistantRuntime implements AutoCloseable {
 
     String lastRecipeIdForTest() {
         return lastRecipeId.get();
+    }
+
+    void setSharedResponseForTest(SharedResponse response) {
+        sharedResponses.update(response);
     }
 
     public void openRecipe(String recipeId, String rawMethod) {
