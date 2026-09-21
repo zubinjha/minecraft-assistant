@@ -184,4 +184,4 @@ Project modules:
 - `tool-mediawiki` — direct Minecraft Wiki access
 - `fabric` — commands, configuration, native guides, rendering, and Minecraft tests
 
-See [SPEC.md](SPEC.md) for the researched product specification and [AGENTS.md](AGENTS.md) for repository working conventions.
+See [AGENTS.md](AGENTS.md) for repository working conventions.
