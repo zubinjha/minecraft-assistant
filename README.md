@@ -54,7 +54,7 @@ Once installed, join a local world and run:
 ```
 
 The mod stores up to 20 recent user and assistant messages (10 complete exchanges) in memory for follow-up questions. The history resets when you leave the current world or server; `/ask clear` resets it manually, `/ask stop` cancels the active request, and `/ask help` explains every command.
-Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Brewing, loom, cartography, enchanting, anvil, and grindstone questions use workstation-specific actions such as **Show Brewing**. Connected production questions such as “How do I go from sand to glass panes?” use one **Show N Steps** action with an ordered, navigable process; several unrelated guides use **Show N Guides**. Cards use Minecraft's synchronized recipes, registries, production rules, workstation textures, slot positions, item renderer, and active resource pack. Dynamic systems stay conservative: enchanting offers are never promised, unknown anvil costs remain variable, and grindstones never claim to remove curses.
+Crafting, cooking, stonecutting, and smithing answers can include a compact **Show Recipe** action. Quantity questions instead use a deterministic **Show Plan** view: Java discovers exact native production graphs, pools shared intermediate demand, calculates batch rounding and leftovers, and validates every operation. The model chooses the route that best fits the request and recent conversation without doing the arithmetic itself. A plan screen stays deliberately small: choose a route when a comparison is useful, choose a numbered step, and inspect that step's native workstation card. Exact totals stay in chat and hover details. A meaningful comparison, such as efficient stonecutting versus familiar crafting, appears as **Compare N Routes**; ordinary questions normally show one route. Brewing, loom, cartography, enchanting, anvil, and grindstone questions use workstation-specific actions such as **Show Brewing**. Connected non-quantity production questions such as “How do I go from sand to glass panes?” use one **Show N Steps** action with an ordered, navigable process; several unrelated guides use **Show N Guides**. Factual, acquisition, strategy, and mechanics answers stay in chat unless structured UI adds meaningful value. Cards use Minecraft's synchronized recipes, registries, production rules, workstation textures, slot positions, item renderer, and active resource pack. Dynamic systems stay conservative: enchanting offers are never promised, unknown anvil costs remain variable, and grindstones never claim to remove curses.
 
 ## Development prerequisites
 
@@ -105,7 +105,15 @@ Fabric build and real-client test:
 ./gradlew :fabric:runClientGameTest
 ```
 
-The client game test creates and removes an isolated local creative world. Set `MINECRAFT_ASSISTANT_OPENROUTER_API_KEY` to include a live OpenRouter request and native recipe-tool call; without it, the test still verifies local command interception, the configuration screen, and recipe rendering.
+The client game test creates and removes an isolated local creative world. It also verifies the reported five-stack stone-brick-slab calculation against Minecraft 26.2's real recipe registry and captures both the crafting and automatically selected stonecutter guides. Set `MINECRAFT_ASSISTANT_OPENROUTER_API_KEY` to include a live OpenRouter request and native recipe-tool call; without it, the test still verifies local command interception, the configuration screen, recipe rendering, and deterministic quantity planning.
+
+For fast visual iteration without Prism, credentials, provider calls, or computer control, generate the isolated UI gallery:
+
+```bash
+./gradlew :fabric:runUiPreview
+```
+
+Open `fabric/build/ui-previews/index.html` to review named screenshots for recipes, plans, route comparisons, native workstations, six-step navigation, rounding, and high-GUI-scale bounds. The task creates only a disposable test world and exits automatically.
 
 Configuration is read from the environment:
 
