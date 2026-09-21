@@ -15,6 +15,22 @@ fabricApi {
     }
 }
 
+loom {
+    runs {
+        create("uiPreview") {
+            inherit(getByName("clientGameTest"))
+            displayName.set("Minecraft Assistant UI Preview")
+            environmentVars.put("MINECRAFT_ASSISTANT_UI_PREVIEW", "true")
+            environmentVars.put(
+                "MINECRAFT_ASSISTANT_UI_PREVIEW_OUTPUT",
+                layout.buildDirectory.dir("ui-previews").get().asFile.absolutePath
+            )
+            runDirectory.set(layout.buildDirectory.dir("run/uiPreview"))
+            generateRunConfig.set(false)
+        }
+    }
+}
+
 base {
     archivesName.set("minecraft-assistant")
 }

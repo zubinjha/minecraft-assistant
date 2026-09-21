@@ -15,6 +15,7 @@ AGENTS.local.md
 
 # Logs and temporary files
 *.log
+fabric/logs/
 tmp/
 temp/
 
