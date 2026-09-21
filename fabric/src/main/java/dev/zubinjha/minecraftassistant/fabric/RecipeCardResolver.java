@@ -90,6 +90,37 @@ final class RecipeCardResolver implements RecipeLookup {
         return select(matches, requestedMethod);
     }
 
+    @Override
+    public List<ProductionCardData> allRecipes() {
+        if (minecraft.level == null) {
+            return List.of();
+        }
+        ContextMap context = SlotDisplayContext.fromLevel(minecraft.level);
+        Map<String, ProductionCardData> cards = new LinkedHashMap<>();
+        if (minecraft.getSingleplayerServer() != null) {
+            for (RecipeHolder<?> holder : minecraft.getSingleplayerServer().getRecipeManager().getRecipes()) {
+                for (ProductionCardData card : fromRecipe(holder, context)) {
+                    cards.putIfAbsent(card.recipeId() + "|" + card.method().toolValue(), card);
+                }
+            }
+        } else if (minecraft.player != null) {
+            for (var collection : minecraft.player.getRecipeBook().getCollections()) {
+                for (RecipeDisplayEntry entry : collection.getRecipes()) {
+                    String selector = "minecraft_assistant:display/" + entry.id().index();
+                    fromDisplay(selector, entry.display(), context, Optional.empty())
+                            .ifPresent(card -> cards.putIfAbsent(
+                                    card.recipeId() + "|" + card.method().toolValue(), card
+                            ));
+                }
+            }
+        }
+        return cards.values().stream()
+                .filter(card -> card.method().isRecipe())
+                .sorted(Comparator.comparing(ProductionCardData::recipeId)
+                        .thenComparing(card -> card.method().toolValue()))
+                .toList();
+    }
+
     private RecipeLookupResult resolveClientDisplay(
             int requestedIndex,
             ContextMap context,

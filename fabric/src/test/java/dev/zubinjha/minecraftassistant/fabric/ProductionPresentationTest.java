@@ -8,10 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.Test;
 
 final class ProductionPresentationTest {
+    @Test
+    void ordinaryAnswersDoNotCreateAPreviewWithoutANativeTool() {
+        assertTrue(new ProductionPresentationCollector().snapshot().isEmpty());
+    }
+
     @Test
     void individualCardsRemainOrderedAndDeduplicated() {
         ProductionCardData first = crafting("minecraft:glass");
@@ -61,6 +67,54 @@ final class ProductionPresentationTest {
                 collector.snapshot().orElseThrow()
         );
         assertEquals(List.of(first, second), sequence.cards());
+    }
+
+    @Test
+    void completeQuantityPlanTakesPrecedenceAndIsImmutable() {
+        ProductionCardData first = cooking("minecraft:stone");
+        ProductionCardData second = crafting("minecraft:stone_brick_slab");
+        ProductionPlan plan = quantityPlan();
+        ProductionPresentationCollector collector = new ProductionPresentationCollector();
+        collector.add(crafting("minecraft:chest"));
+        collector.setSequence(List.of(first, second));
+
+        collector.setPlanned(plan);
+
+        ProductionPresentation.Plan planned = assertInstanceOf(
+                ProductionPresentation.Plan.class,
+                collector.snapshot().orElseThrow()
+        );
+        assertEquals(plan, planned.plan());
+        assertThrows(UnsupportedOperationException.class, () ->
+                planned.plan().operations().add(plan.operations().getFirst()));
+    }
+
+    @Test
+    void routeComparisonIsImmutableAndGeneratesAuthoritativeSummary() {
+        ProductionPlan efficientPlan = routePlan(ProductionMethod.STONECUTTING, 200);
+        ProductionPlan familiarPlan = routePlan(ProductionMethod.CRAFTING, 300);
+        ProductionPresentation.Route efficient = new ProductionPresentation.Route(
+                "p1", "Stonecutting", efficientPlan
+        );
+        ProductionPresentation.Route familiar = new ProductionPresentation.Route(
+                "p2", "Crafting", familiarPlan
+        );
+        ProductionPresentation.Comparison comparison = new ProductionPresentation.Comparison(
+                List.of(efficient, familiar)
+        );
+
+        assertEquals(
+                "Best: 200 Cobblestone → 200 Stone Brick Stairs via Stonecutting. "
+                        + "Crafting route: 300 Cobblestone → 200 Stone Brick Stairs via Crafting.",
+                comparison.authoritativeSummary().orElseThrow()
+        );
+        assertEquals("Compare 2 Routes", MinecraftAssistantRuntime.presentationButtonLabel(comparison));
+        assertEquals("Cutter · 200", ProductionCardScreen.routeTabLabel(efficient));
+        assertEquals("[Cutter · 200]", ProductionCardScreen.routeButtonLabel(efficient, true));
+        assertThrows(UnsupportedOperationException.class, () -> comparison.routes().add(efficient));
+        assertThrows(IllegalArgumentException.class, () -> new ProductionPresentation.Comparison(
+                List.of(efficient, efficient)
+        ));
     }
 
     @Test
@@ -166,6 +220,49 @@ final class ProductionPresentationTest {
         assertEquals(0, ProductionCardScreen.selectedIndex(0, -1, 2));
         assertEquals(1, ProductionCardScreen.selectedIndex(0, 1, 2));
         assertEquals(1, ProductionCardScreen.selectedIndex(1, 2, 2));
+        assertFalse(ProductionCardScreen.showsStepSelector(1));
+        assertTrue(ProductionCardScreen.showsStepSelector(2));
+
+        ProductionCardScreen.ShellGeometry plan = ProductionCardScreen.planShellGeometry(
+                320, 240, false, true
+        );
+        ProductionCardScreen.ShellGeometry comparison = ProductionCardScreen.planShellGeometry(
+                320, 240, true, true
+        );
+        ProductionCardScreen.ShellGeometry highScale = ProductionCardScreen.planShellGeometry(
+                213, 180, false, true
+        );
+        ProductionCardScreen.ShellGeometry sequence = ProductionCardScreen.sequenceShellGeometry(
+                320, 240
+        );
+        ProductionCardScreen.ShellGeometry highScaleSequence = ProductionCardScreen.sequenceShellGeometry(
+                213, 196
+        );
+        assertTrue(plan.fitsWithin(320, 240));
+        assertTrue(comparison.fitsWithin(320, 240));
+        assertTrue(highScale.fitsWithin(213, 180));
+        assertTrue(sequence.fitsWithin(320, 240));
+        assertTrue(highScaleSequence.fitsWithin(213, 196));
+        assertTrue(plan.height() < ProductionCardScreen.shellGeometry(320, 240, true).height());
+        assertTrue(sequence.height() < ProductionCardScreen.shellGeometry(320, 240, true).height());
+    }
+
+    @Test
+    void authoritativeQuantitySummaryReplacesModelArithmeticButKeepsSource() {
+        ProductionPresentation presentation = new ProductionPresentation.Plan(quantityPlan());
+
+        String answer = MinecraftAssistantRuntime.authoritativeAnswer(
+                "You need 999 cobblestone.\nSource: https://minecraft.wiki/w/Stone_Bricks",
+                presentation
+        );
+
+        assertEquals(quantityPlan().summary()
+                + "\nSource: https://minecraft.wiki/w/Stone_Bricks", answer);
+        assertEquals("Show Plan", MinecraftAssistantRuntime.presentationButtonLabel(presentation));
+        assertEquals("12 crafts · 36 in > 72 out · 8 surplus",
+                ProductionCardScreen.stepDetails(quantityPlan().operations().getFirst()));
+        assertEquals("1.2k", ProductionCardScreen.compactCount(1_234));
+        assertEquals("12k", ProductionCardScreen.compactCount(12_345));
     }
 
     private static ProductionCardData crafting(String id) {
@@ -195,5 +292,85 @@ final class ProductionPresentationTest {
     private static ProductionCardData cartography(String id) {
         ProductionCardData.Slot empty = ProductionCardData.Slot.of(ItemStack.EMPTY);
         return new ProductionCardData.Cartography(id, "lock", empty, empty, empty, empty);
+    }
+
+    private static ProductionPlan quantityPlan() {
+        ProductionCardData card = crafting("minecraft:stone_brick_slab");
+        ProductionPlan.Material input = new ProductionPlan.Material(
+                "minecraft:stone_bricks", "Stone Bricks", 36, List.of("minecraft:stone_bricks"),
+                ItemStack.EMPTY
+        );
+        ProductionPlan.Material output = new ProductionPlan.Material(
+                "minecraft:stone_brick_slab", "Stone Brick Slab", 72,
+                List.of("minecraft:stone_brick_slab"), ItemStack.EMPTY
+        );
+        ProductionPlan.Operation step = new ProductionPlan.Operation(
+                card,
+                12,
+                List.of(input),
+                output,
+                8,
+                0
+        );
+        return new ProductionPlan(
+                64,
+                72,
+                "minecraft:stone_brick_slab",
+                "Stone Brick Slab",
+                "minecraft:stone_bricks",
+                "Stone Bricks",
+                List.of(step),
+                List.of(input),
+                List.of(new ProductionPlan.Material(
+                        "minecraft:stone_brick_slab", "Stone Brick Slab", 8,
+                        List.of("minecraft:stone_brick_slab"), ItemStack.EMPTY
+                )),
+                false
+        );
+    }
+
+    private static ProductionPlan routePlan(ProductionMethod method, long sourceCount) {
+        ProductionPlan.Material source = new ProductionPlan.Material(
+                "minecraft:cobblestone", "Cobblestone", sourceCount, List.of("minecraft:cobblestone"),
+                ItemStack.EMPTY
+        );
+        ProductionCardData card = methodCard("minecraft:stone_brick_stairs", method);
+        ProductionPlan.Material output = new ProductionPlan.Material(
+                "minecraft:stone_brick_stairs", "Stone Brick Stairs", 200,
+                List.of("minecraft:stone_brick_stairs"), ItemStack.EMPTY
+        );
+        ProductionPlan.Operation step = new ProductionPlan.Operation(
+                card,
+                200,
+                List.of(source),
+                output,
+                0,
+                method == ProductionMethod.SMELTING ? 200 : 0
+        );
+        return new ProductionPlan(
+                200,
+                200,
+                "minecraft:stone_brick_stairs",
+                "Stone Brick Stairs",
+                "minecraft:cobblestone",
+                "Cobblestone",
+                List.of(step),
+                List.of(source),
+                List.of(),
+                false
+        );
+    }
+
+    private static ProductionCardData methodCard(String id, ProductionMethod method) {
+        ProductionCardData.Slot empty = ProductionCardData.Slot.of(ItemStack.EMPTY);
+        return switch (method) {
+            case CRAFTING -> new ProductionCardData.Crafting(id, 1, 1, List.of(empty), empty, false);
+            case STONECUTTING -> new ProductionCardData.Stonecutting(id, empty, empty, empty);
+            case SMELTING, BLASTING, SMOKING, CAMPFIRE_COOKING -> new ProductionCardData.Cooking(
+                    id, method, empty, new ProductionCardData.Slot(List.of(), true), empty, empty, 200, 0.0F
+            );
+            case SMITHING -> new ProductionCardData.Smithing(id, empty, empty, empty, empty, empty);
+            default -> throw new IllegalArgumentException("Unsupported test method: " + method);
+        };
     }
 }

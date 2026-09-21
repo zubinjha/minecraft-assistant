@@ -13,6 +13,7 @@ final class ProductionPresentationCollector {
     private final List<List<ProductionCardData>> segments = new ArrayList<>();
     private final Set<String> nativeSequenceKeys = new LinkedHashSet<>();
     private ProductionPresentation.Sequence recipeSequence;
+    private ProductionPresentation plannedPresentation;
 
     synchronized void add(ProductionCardData card) {
         if (individualCards.putIfAbsent(key(card), card) == null) {
@@ -34,7 +35,18 @@ final class ProductionPresentationCollector {
         }
     }
 
+    synchronized void setPlanned(ProductionPlan plan) {
+        plannedPresentation = new ProductionPresentation.Plan(plan);
+    }
+
+    synchronized void setComparison(List<ProductionPresentation.Route> routes) {
+        plannedPresentation = new ProductionPresentation.Comparison(routes);
+    }
+
     synchronized Optional<ProductionPresentation> snapshot() {
+        if (plannedPresentation != null) {
+            return Optional.of(plannedPresentation);
+        }
         if (recipeSequence != null) {
             return Optional.of(recipeSequence);
         }

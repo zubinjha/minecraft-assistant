@@ -17,13 +17,16 @@ import net.minecraft.resources.Identifier;
 final class RecipeCardRequestTool implements Tool {
     private static final ToolDefinition DEFINITION = new ToolDefinition(
             "show_recipe",
-            "Prepare a native Minecraft recipe card using the game's authoritative recipe data.",
+            "Prepare a native Minecraft recipe card using the game's authoritative recipe data. "
+                    + "For quantity questions, include target_quantity and let the native planner calculate totals. "
+                    + "Do not use this for ordinary factual, acquisition, strategy, or mechanics answers.",
             schema()
     );
 
     private final Executor clientExecutor;
     private final RecipeLookup resolver;
     private final ProductionPresentationCollector presentations;
+    private final ProductionQuantityPlanner quantityPlanner = new ProductionQuantityPlanner();
 
     RecipeCardRequestTool(
             Minecraft minecraft,
@@ -68,6 +71,12 @@ final class RecipeCardRequestTool implements Tool {
                             + supportedMethods() + "."
             ));
         }
+        ProductionQuantityRequest.ParseResult quantity = ProductionQuantityRequest.parseOptional(arguments);
+        if (!quantity.valid()) {
+            return CompletableFuture.completedFuture(ToolExecutionResult.text(
+                    "No recipe card was created: " + quantity.error() + "."
+            ));
+        }
 
         CompletableFuture<ToolExecutionResult> result = new CompletableFuture<>();
         clientExecutor.execute(() -> {
@@ -77,6 +86,26 @@ final class RecipeCardRequestTool implements Tool {
                 switch (lookup) {
                     case RecipeLookupResult.Found found -> {
                         ProductionCardData card = found.card();
+                        if (quantity.request().isPresent()) {
+                            ProductionQuantityPlanner.Result planned = quantityPlanner.plan(
+                                    java.util.List.of(card), quantity.request().get(), Optional.empty(), cancellation
+                            );
+                            if (planned instanceof ProductionQuantityPlanner.Result.Failure failure) {
+                                result.complete(ToolExecutionResult.text(
+                                        "No quantity plan was created: " + failure.reason()
+                                                + ". Do not calculate totals yourself."
+                                ));
+                                return;
+                            }
+                            ProductionPlan plan =
+                                    ((ProductionQuantityPlanner.Result.Success) planned).plan();
+                            presentations.setPlanned(plan);
+                            result.complete(ToolExecutionResult.terminal(
+                                    "The native quantity plan is ready. The mod will display its authoritative summary.",
+                                    plan.summary()
+                            ));
+                            return;
+                        }
                         presentations.add(card);
                         String action = presentations.snapshot()
                                 .map(MinecraftAssistantRuntime::presentationButtonLabel)
@@ -123,10 +152,30 @@ final class RecipeCardRequestTool implements Tool {
         }
         method.set("enum", methods);
         properties.set("method", method);
+        properties.set("target_quantity", targetQuantitySchema(json));
         schema.set("properties", properties);
         schema.set("required", json.arrayNode().add("recipe_id"));
         schema.put("additionalProperties", false);
         return schema;
+    }
+
+    static ObjectNode targetQuantitySchema(JsonNodeFactory json) {
+        ObjectNode quantity = json.objectNode();
+        quantity.put("type", "object");
+        ObjectNode properties = json.objectNode();
+        properties.set("total_items", json.objectNode().put("type", "integer").put("minimum", 0)
+                .put("maximum", ProductionQuantityRequest.MAX_TARGET_ITEMS)
+                .put("description", "Exact total item count stated by the player. Never combine a positive value "
+                        + "with positive stacks or loose_items."));
+        properties.set("stacks", json.objectNode().put("type", "integer").put("minimum", 0)
+                .put("maximum", ProductionQuantityRequest.MAX_TARGET_ITEMS)
+                .put("description", "Number of target-item stacks explicitly stated by the player"));
+        properties.set("loose_items", json.objectNode().put("type", "integer").put("minimum", 0)
+                .put("maximum", ProductionQuantityRequest.MAX_TARGET_ITEMS)
+                .put("description", "Loose items explicitly stated in addition to stacks"));
+        quantity.set("properties", properties);
+        quantity.put("additionalProperties", false);
+        return quantity;
     }
 
     private static String supportedMethods() {
