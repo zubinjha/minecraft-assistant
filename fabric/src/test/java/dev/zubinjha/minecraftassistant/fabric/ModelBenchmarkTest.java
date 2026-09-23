@@ -45,16 +45,18 @@ final class ModelBenchmarkTest {
         assertEquals(20, suite.cases().size());
         assertEquals(100, suite.cases().size() * 5);
         assertEquals(20, new HashSet<>(suite.cases().stream().map(BenchmarkSuite.Case::id).toList()).size());
-        assertEquals(13, suite.models().size());
-        assertEquals(13, new HashSet<>(suite.models().stream().map(BenchmarkSuite.Model::key).toList()).size());
+        assertEquals(17, suite.models().size());
+        assertEquals(17, new HashSet<>(suite.models().stream().map(BenchmarkSuite.Model::key).toList()).size());
         assertTrue(suite.models().stream().allMatch(model -> Set.of("low", "high")
                 .contains(model.reasoningEffort())));
+        assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("openai/gpt-6-luna@high")));
+        assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("openai/gpt-6-sol@high")));
         assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("openai/gpt-5.6-luna@high")));
         assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("openai/gpt-5.6-sol@high")));
         assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("anthropic/claude-opus-5@high")));
         assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("anthropic/claude-haiku-4.5@low")));
         assertTrue(suite.models().stream().anyMatch(model -> model.key().equals("anthropic/claude-haiku-4.5@high")));
-        assertTrue(Files.readString(BenchmarkSuite.DEFAULT_PATH).contains("openai/gpt-5.6-luna"));
+        assertTrue(Files.readString(BenchmarkSuite.DEFAULT_PATH).contains("openai/gpt-6-luna"));
     }
 
     @Test
@@ -175,12 +177,29 @@ final class ModelBenchmarkTest {
         assertEquals(100, summary.path("models").get(0).path("score").asInt());
         assertEquals(0.02, summary.path("models").get(0).path("cost_usd").asDouble(), 0.0000001);
         assertEquals(1000.0, summary.path("models").get(0).path("prompts_per_dollar").asDouble());
+        assertEquals(model.id(), summary.path("recommended_model").asText());
+        assertEquals(model.id(), summary.path("best_quality_model").asText());
         assertEquals("3,700", ModelBenchmarkMain.formatTwoSignificant(3685.03));
         assertTrue(Files.readString(directory.resolve("summary.md")).contains("| Avg. latency |"));
         assertTrue(Files.readString(directory.resolve("summary.md"))
-                .contains("[GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna)"));
+                .contains("[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)"));
         assertTrue(Files.readString(directory.resolve("summary.md")).contains("2.00s"));
         assertTrue(ModelBenchmarkMain.modelComplete(raw, model, suite.cases()));
+    }
+
+    @Test
+    void recommendationPrefersValueWithinFivePointsOfBestQuality() {
+        ObjectNode bestQuality = JSON.createObjectNode()
+                .put("model_id", "openai/gpt-6-sol").put("score", 99).put("prompts_per_dollar", 430);
+        ObjectNode bestBalance = JSON.createObjectNode()
+                .put("model_id", "openai/gpt-6-luna").put("score", 95).put("prompts_per_dollar", 8500);
+        ObjectNode belowQualityBar = JSON.createObjectNode()
+                .put("model_id", "fixture/cheap").put("score", 93).put("prompts_per_dollar", 100000);
+
+        JsonNode recommended = ModelBenchmarkMain.recommendedModel(
+                List.of(bestQuality, bestBalance, belowQualityBar));
+
+        assertEquals("openai/gpt-6-luna", recommended.path("model_id").asText());
     }
 
     @Test

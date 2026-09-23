@@ -14,7 +14,7 @@ This is an unreleased development build. GitHub Releases and Modrinth will becom
 6. Create an [OpenRouter](https://openrouter.ai/) account and generate a secret on the
    [API Keys page](https://openrouter.ai/settings/keys).
 7. Run `/ask config`. Paste the secret into **OpenRouter API key** and enter
-   `openai/gpt-5.6-luna` in **Model**. The model value is an `author/model-name` ID, not a URL.
+   `openai/gpt-6-luna` in **Model**. The model value is an `author/model-name` ID, not a URL.
 8. Leave reasoning on **low**, use **Test Connection**, and save.
 9. Try `/ask how do I craft a recovery compass?`, `/ask how do I smelt glass?`, or `/ask how do I go from sand to glass panes?`. Single operations use **Show Recipe**; connected production chains use one **Show N Steps** action.
 
@@ -65,6 +65,6 @@ Local credential files are convenient but are not equivalent to an operating-sys
 
 - **`/ask` is unknown:** confirm Fabric Loader, Fabric API, and the Minecraft Assistant mod are enabled for the same 26.2 instance.
 - **OpenRouter rejected the API key:** reopen `/ask config`, replace the key, and run **Test Connection**.
-- **The selected model is unavailable:** restore `openai/gpt-5.6-luna` or copy another tested model ID from the README table.
+- **The selected model is unavailable:** restore `openai/gpt-6-luna` or copy another tested model ID from the README table.
 - **The Wiki is unavailable:** retry later; a failed retrieval should not crash or freeze Minecraft.
 - **A server owns `/ask`:** use `/mcai ask <question>`.

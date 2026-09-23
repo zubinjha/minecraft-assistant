@@ -53,7 +53,7 @@ The easiest current setup is Prism Launcher:
    [OpenRouter API Keys](https://openrouter.ai/settings/keys) page.
 5. Run `/ask config` in Minecraft.
 6. Paste the secret key into **OpenRouter API key**. In **Model**, enter
-   `openai/gpt-5.6-luna` (or copy another tested ID from the table below). The model ID is not a URL
+   `openai/gpt-6-luna` (or copy another tested ID from the table below). The model ID is not a URL
    or a second key.
 7. Leave reasoning on **low**, select **Test Connection**, then **Save**.
 8. Try `/ask how do I make a compass?`.
@@ -62,15 +62,19 @@ See the [complete installation guide](docs/INSTALLATION.md) for detailed Prism L
 
 ## Which model should I use?
 
-Start with **GPT-5.6 Luna on low reasoning**. It gave the best balance of accuracy, tool use, speed, and cost in the
+Start with **GPT-6 Luna on low reasoning**. It gave the best balance of accuracy, tool use, speed, and cost in the
 project's reproducible 20-question test.
 
 | Provider | Model | Reasoning | Model ID to paste | Score | ~prompts/$ | Avg. latency |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| OpenAI | [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna) **(Recommended)** | Low | `openai/gpt-5.6-luna` | 98/100 | ~3,700 | 2.98s |
-| OpenAI | [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna) | High | `openai/gpt-5.6-luna` | 97/100 | ~3,000 | 4.11s |
-| OpenAI | [GPT-5.6 Sol](https://openrouter.ai/openai/gpt-5.6-sol) | Low | `openai/gpt-5.6-sol` | 97/100 | ~380 | 3.71s |
-| OpenAI | [GPT-5.6 Sol](https://openrouter.ai/openai/gpt-5.6-sol) | High | `openai/gpt-5.6-sol` | 98/100 | ~360 | 3.80s |
+| OpenAI | [GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna) **(Recommended)** | Low | `openai/gpt-6-luna` | 95/100 | ~8,500 | 1.85s |
+| OpenAI | [GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna) | High | `openai/gpt-6-luna` | 95/100 | ~6,400 | 3.19s |
+| OpenAI | [GPT-6 Sol](https://openrouter.ai/openai/gpt-6-sol) **(Best quality)** | Low | `openai/gpt-6-sol` | 99/100 | ~430 | 2.52s |
+| OpenAI | [GPT-6 Sol](https://openrouter.ai/openai/gpt-6-sol) | High | `openai/gpt-6-sol` | 98/100 | ~280 | 4.86s |
+| OpenAI | [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna) | Low | `openai/gpt-5.6-luna` | 96/100 | ~3,600 | 3.21s |
+| OpenAI | [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna) | High | `openai/gpt-5.6-luna` | 96/100 | ~3,000 | 3.99s |
+| OpenAI | [GPT-5.6 Sol](https://openrouter.ai/openai/gpt-5.6-sol) | Low | `openai/gpt-5.6-sol` | 98/100 | ~380 | 4.82s |
+| OpenAI | [GPT-5.6 Sol](https://openrouter.ai/openai/gpt-5.6-sol) | High | `openai/gpt-5.6-sol` | 98/100 | ~320 | 4.80s |
 | OpenAI | [GPT-5 Mini](https://openrouter.ai/openai/gpt-5-mini) | Low | `openai/gpt-5-mini` | 78/100 | ~1,400 | 4.43s |
 | OpenAI | [GPT-5 Nano](https://openrouter.ai/openai/gpt-5-nano) | Low | `openai/gpt-5-nano` | 26/100 | ~4,200 | 7.59s |
 | Anthropic | [Claude Haiku 4.5](https://openrouter.ai/anthropic/claude-haiku-4.5) | Low | `anthropic/claude-haiku-4.5` | 82/100 | ~120 | 2.13s |
@@ -81,9 +85,10 @@ project's reproducible 20-question test.
 | DeepSeek | [DeepSeek V4.1 Flash](https://openrouter.ai/deepseek/deepseek-v4.1-flash) | Low | `deepseek/deepseek-v4.1-flash` | 95/100 | ~3,400 | 10.62s |
 | Inception | [Mercury 2.5](https://openrouter.ai/inception/mercury-2.5) | Low | `inception/mercury-2.5` | 85/100 | ~2,900 | 2.05s |
 
-Tested September 21, 2026 with 20 questions per model and reasoning setting. A “prompt” here means one
-complete player question, including any extra model turns needed to use tools. Prices, routing, and
-model behavior can change, so the cost figures are approximate. See the
+GPT-6 and GPT-5.6 results were tested September 23, 2026. The remaining models were tested September
+21, 2026, using the same versioned 20-question suite. A “prompt” here means one complete player
+question, including any extra model turns needed to use tools. Prices, routing, and model behavior can
+change, so the cost figures are approximate. See the
 [benchmark methodology](benchmarks/README.md) to reproduce the test; bulky raw transcripts stay
 local and are not committed.
 

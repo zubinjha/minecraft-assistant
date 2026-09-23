@@ -386,20 +386,16 @@ public final class ModelBenchmarkMain {
             return score != 0 ? score : Double.compare(
                     right.path("prompts_per_dollar").asDouble(), left.path("prompts_per_dollar").asDouble());
         });
-        int topScore = sorted.getFirst().path("score").asInt();
-        JsonNode recommended = sorted.getFirst();
-        JsonNode bestValue = sorted.stream().filter(row -> row.path("score").asInt() >= topScore - 10)
-                .max((left, right) -> Double.compare(
-                        left.path("prompts_per_dollar").asDouble(), right.path("prompts_per_dollar").asDouble()))
-                .orElse(recommended);
+        JsonNode bestQuality = sorted.getFirst();
+        JsonNode recommended = recommendedModel(sorted);
 
         ObjectNode summary = JSON.createObjectNode();
         summary.put("suite_version", suite.version()).put("generated_at", Instant.now().toString())
                 .put("questions_per_model", suite.cases().size())
                 .put("recommended_model", recommended.path("model_id").asText())
                 .put("recommended_reasoning_effort", recommended.path("reasoning_effort").asText())
-                .put("best_value_model", bestValue.path("model_id").asText())
-                .put("best_value_reasoning_effort", bestValue.path("reasoning_effort").asText());
+                .put("best_quality_model", bestQuality.path("model_id").asText())
+                .put("best_quality_reasoning_effort", bestQuality.path("reasoning_effort").asText());
         ArrayNode summaryRows = summary.putArray("models");
         sorted.forEach(summaryRows::add);
         writeJson(output.resolve("summary.json"), summary);
@@ -407,11 +403,19 @@ public final class ModelBenchmarkMain {
         System.out.println(markdownSummary(summary));
     }
 
+    static JsonNode recommendedModel(List<JsonNode> scoreSortedRows) {
+        int topScore = scoreSortedRows.getFirst().path("score").asInt();
+        return scoreSortedRows.stream().filter(row -> row.path("score").asInt() >= topScore - 5)
+                .max((left, right) -> Double.compare(
+                        left.path("prompts_per_dollar").asDouble(), right.path("prompts_per_dollar").asDouble()))
+                .orElse(scoreSortedRows.getFirst());
+    }
+
     static String markdownSummary(JsonNode summary) {
         String recommended = summary.path("recommended_model").asText();
         String recommendedEffort = summary.path("recommended_reasoning_effort").asText();
-        String bestValue = summary.path("best_value_model").asText();
-        String bestValueEffort = summary.path("best_value_reasoning_effort").asText();
+        String bestQuality = summary.path("best_quality_model").asText();
+        String bestQualityEffort = summary.path("best_quality_reasoning_effort").asText();
         StringBuilder markdown = new StringBuilder();
         markdown.append("| Provider | Model | Reasoning | Model ID to paste | Score | ~prompts/$ | Avg. latency |\n")
                 .append("| --- | --- | --- | --- | ---: | ---: | ---: |\n");
@@ -424,8 +428,8 @@ public final class ModelBenchmarkMain {
             String label = "[" + displayName(id) + "](https://openrouter.ai/" + id + ")";
             if (id.equals(recommended) && effort.equals(recommendedEffort)) {
                 label += " **(Recommended)**";
-            } else if (id.equals(bestValue) && effort.equals(bestValueEffort)) {
-                label += " **(Best value)**";
+            } else if (id.equals(bestQuality) && effort.equals(bestQualityEffort)) {
+                label += " **(Best quality)**";
             }
             markdown.append("| ").append(providerName(id)).append(" | ").append(label)
                     .append(" | ").append(capitalize(effort)).append(" | `").append(id).append("` | ")
@@ -449,15 +453,17 @@ public final class ModelBenchmarkMain {
 
     private static int documentationRank(String id) {
         return switch (id) {
-            case "openai/gpt-5.6-luna" -> 0;
-            case "openai/gpt-5.6-sol" -> 1;
-            case "openai/gpt-5-mini" -> 2;
-            case "openai/gpt-5-nano" -> 3;
-            case "anthropic/claude-haiku-4.5" -> 4;
-            case "anthropic/claude-opus-5" -> 5;
-            case "google/gemini-3.8-flash" -> 6;
-            case "deepseek/deepseek-v4.1-flash" -> 7;
-            case "inception/mercury-2.5" -> 8;
+            case "openai/gpt-6-luna" -> 0;
+            case "openai/gpt-6-sol" -> 1;
+            case "openai/gpt-5.6-luna" -> 2;
+            case "openai/gpt-5.6-sol" -> 3;
+            case "openai/gpt-5-mini" -> 4;
+            case "openai/gpt-5-nano" -> 5;
+            case "anthropic/claude-haiku-4.5" -> 6;
+            case "anthropic/claude-opus-5" -> 7;
+            case "google/gemini-3.8-flash" -> 8;
+            case "deepseek/deepseek-v4.1-flash" -> 9;
+            case "inception/mercury-2.5" -> 10;
             default -> Integer.MAX_VALUE;
         };
     }
@@ -488,6 +494,8 @@ public final class ModelBenchmarkMain {
 
     private static String displayName(String id) {
         return switch (id) {
+            case "openai/gpt-6-luna" -> "GPT-6 Luna";
+            case "openai/gpt-6-sol" -> "GPT-6 Sol";
             case "openai/gpt-5.6-luna" -> "GPT-5.6 Luna";
             case "openai/gpt-5.6-sol" -> "GPT-5.6 Sol";
             case "anthropic/claude-haiku-4.5" -> "Claude Haiku 4.5";

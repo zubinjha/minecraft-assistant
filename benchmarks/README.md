@@ -12,12 +12,13 @@ Run selected models or questions:
 
 ```sh
 OPENROUTER_API_KEY=... ./gradlew :fabric:runModelBenchmark \
-  --args='run --models=openai/gpt-5.6-luna@high --questions=production-torches,quantity-stairs'
+  --args='run --models=openai/gpt-6-luna@high --questions=production-torches,quantity-stairs'
 ```
 
 A bare model ID selects every configured reasoning variant for that model. Add `@low` or `@high`
-to select one variant. The full baseline compares Luna, Sol, Claude Haiku 4.5, and Claude Opus 5 at
-both low and high reasoning, plus the other lower-cost models listed in the suite file.
+to select one variant. The full baseline compares GPT-6 and GPT-5.6 Luna and Sol, Claude Haiku 4.5,
+and Claude Opus 5 at both low and high reasoning, plus the other lower-cost models listed in the
+suite file.
 
 Resume an interrupted run without overwriting completed cases:
 
@@ -39,7 +40,10 @@ After every case has a correctness score from 0â€“2, tool/context score from 0â€
   --args='report benchmark-results/<timestamp>'
 ```
 
-The report command validates the review, reveals the model mapping, and creates `summary.json` and `summary.md`. Published README results are a dated snapshot, not a permanent claim: OpenRouter routing, prices, and model behavior can change.
+The report command validates the review, reveals the model mapping, and creates `summary.json` and
+`summary.md`. It recommends the highest-value configuration within five points of the top score and
+labels the top scorer as best quality. Published README results are a dated snapshot, not a permanent
+claim: OpenRouter routing, prices, and model behavior can change.
 
 The versioned suite covers six factual Wiki questions, five native recipe/workstation guides,
 production chains, deterministic quantity planning, route comparison, three conversation follow-ups,

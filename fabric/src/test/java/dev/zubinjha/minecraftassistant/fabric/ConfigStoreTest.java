@@ -13,7 +13,7 @@ final class ConfigStoreTest {
 
     @Test
     void newInstallUsesTheBenchmarkedDefaultModel() {
-        assertEquals("openai/gpt-5.6-luna", AssistantConfig.defaults().model());
+        assertEquals("openai/gpt-6-luna", AssistantConfig.defaults().model());
         assertEquals("low", AssistantConfig.defaults().reasoningEffort());
     }
 

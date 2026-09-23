@@ -36,7 +36,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 final class SemanticProductionBenchmarkTest {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String MODEL = "openai/gpt-5.6-luna";
+    private static final String MODEL = "openai/gpt-6-luna";
 
     @Test
     @EnabledIfEnvironmentVariable(named = "OPENROUTER_API_KEY", matches = ".+")
